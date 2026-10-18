@@ -13,8 +13,8 @@ RUN npm ci
 
 COPY . .
 RUN npm run build \
-    && mkdir -p /app/.wrangler/state \
-    && chown -R app:app /app/.wrangler /app/dist/server
+    && mkdir -p /app/.wrangler/state /app/.sites-runtime/wrangler \
+    && chown -R app:app /app/.wrangler /app/.sites-runtime /app/dist/server
 
 COPY docker-entrypoint.sh /usr/local/bin/market-evidence-entrypoint
 RUN chmod 755 /usr/local/bin/market-evidence-entrypoint
