@@ -360,7 +360,7 @@ export function ResearchWorkspace() {
                     {aiReport.uncertainties.length > 0 && <div className="ai-report-block"><strong>仍待核对</strong>{aiReport.uncertainties.map((item, index) => <p className="ai-uncertainty" key={"uncertainty-" + index}><span>{dimensionLabels[item.dimension]}</span>{item.statement}</p>)}</div>}
                   </div> : <div className="ai-pending-box"><span className="ai-pending-icon"><Sparkles size={17} /></span><div><strong>{snapshot.mode === "demo" ? "演示环境不调用模型" : "本轮未生成 AI 研判"}</strong><p>{snapshot.mode === "demo" ? "此处只展示合成演示数据和代码计算；合成序列不进入 AI 研判。" : "模型尚未配置或本轮输出未通过校验。真实数据、规则标签和证据仍可查看。"}</p></div></div>}
                   <div className="tag-list-heading">规则标签 <span>{snapshot.synthetic ? "来自合成序列" : "由服务端代码计算"}</span></div>
-                  <div className="state-tag-list">{snapshot.stateTags.length ? snapshot.stateTags.map((tag) => <span className="state-tag" key={tag.id}><Activity size={13} />{tag.label}</span>) : <span className="empty-tag">当前演示序列没有触发已配置标签。</span>}</div>
+                  <div className="state-tag-list">{snapshot.stateTags.length ? snapshot.stateTags.map((tag) => <span className="state-tag" key={tag.id}><Activity size={13} />{tag.label}</span>) : <span className="empty-tag">{snapshot.synthetic ? "当前演示序列没有触发已配置标签。" : "本轮数据没有触发已配置规则标签。"}</span>}</div>
                   <div className="status-divider" />
                   <div className="confidence-row"><span>核心证据覆盖</span><strong>{aiReport ? String(aiReport.evidenceCoverage) + "%" : "未计算"}</strong><small>按行情结构、市场宽度、风格三个维度的可用性计算；不代表涨跌概率。</small></div>
                   {confidence && <div className="confidence-row"><span>当前归纳置信度</span><strong>{confidence.label}</strong><small>{confidence.reason}置信度描述证据对当前归纳的支持程度，不代表未来涨跌概率。</small></div>}
