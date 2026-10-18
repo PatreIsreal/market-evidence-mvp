@@ -23,6 +23,7 @@ import {
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type { AiReport, Dimension, Evidence, PricePoint, ResearchInput, ResearchSnapshot } from "@/lib/contracts/research";
 import { dimensionLabels } from "@/lib/contracts/research";
+import { assessResearchConfidence } from "@/lib/confidence";
 import { consumeResearchStream, type ResearchStreamEvent } from "@/lib/client/consume-stream";
 import { downloadSnapshot } from "@/lib/client/export-report";
 
@@ -223,6 +224,7 @@ export function ResearchWorkspace() {
   }
 
   const demoMode = capabilities?.mode !== "live";
+  const confidence = snapshot ? assessResearchConfidence(snapshot, aiReport !== null) : null;
   const priceChart = snapshot ? pointsForChart(snapshot.priceSeries) : [];
   const firstComparison = snapshot ? pointsForChart(snapshot.comparisonSeries[0]?.points ?? []) : [];
   const secondComparison = snapshot ? pointsForChart(snapshot.comparisonSeries[1]?.points ?? []) : [];
@@ -307,7 +309,7 @@ export function ResearchWorkspace() {
               <div className="scope-row">
               <label className="select-field"><span>主观察指数</span><select value={primaryIndex} onChange={(event) => setPrimaryIndex(event.target.value as ResearchInput["scope"]["primaryIndex"])}>{indexes.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select></label>
                 <label className="select-field"><span>研究区间</span><select value={rangeMode === "range" ? "range" : String(windowDays)} onChange={(event) => { if (event.target.value === "range") setRangeMode("range"); else { setRangeMode("lookback"); setWindowDays(Number(event.target.value) as 20 | 60 | 120); } }}><option value="20">近 20 个交易日</option><option value="60">近 60 个交易日</option><option value="120">近 120 个交易日</option><option value="range">指定日期区间</option></select></label>
-                <div className="scope-note"><CalendarDays size={15} /><span>{snapshot ? `演示区间 ${snapshot.scope.actualStartDate} — ${snapshot.scope.actualEndDate}` : "真实交易日将由数据日历确定"}</span></div>
+                <div className="scope-note"><CalendarDays size={15} /><span>{snapshot ? `${snapshot.synthetic ? "演示区间" : "实际区间"} ${snapshot.scope.actualStartDate} — ${snapshot.scope.actualEndDate}` : "真实交易日将由数据日历确定"}</span></div>
                 <button className="run-button" type="submit" disabled={phase === "running"}>{phase === "running" ? <LoaderCircle size={16} className="spin" /> : <Search size={16} />}{phase === "running" ? "正在查询" : "开始研究"}<ArrowRight size={15} /></button>
               </div>
               {rangeMode === "range" && <div className="date-range-row"><label className="date-field"><span>开始日期</span><input type="date" required value={startDate} max={endDate} onChange={(event) => setStartDate(event.target.value)} /></label><label className="date-field"><span>结束日期</span><input type="date" required value={endDate} max={beijingToday()} min={startDate} onChange={(event) => setEndDate(event.target.value)} /></label><span className="date-range-hint">按所选自然日查询；实际交易日由数据源返回。</span></div>}
@@ -326,10 +328,10 @@ export function ResearchWorkspace() {
                 <div className="result-actions"><span className="result-source-pill"><span className="mini-dot" />{snapshot.sourceLabel}</span><button type="button" onClick={() => downloadSnapshot({ ...snapshot, aiReport: aiReport ?? undefined }, "markdown")}><Download size={14} />导出 Markdown</button><button type="button" onClick={() => downloadSnapshot({ ...snapshot, aiReport: aiReport ?? undefined }, "json")}><Download size={14} />JSON</button></div>
               </section>
 
-              <section className="metric-grid" aria-label="演示指标">
-                <MetricCard label="20 日区间收益" value={formatPercent(snapshot.metrics.return20)} change={snapshot.metrics.return20 === null ? "观察窗口不足" : "仅为合成价格变化"} icon={<Activity size={16} />} evidence={snapshot.evidence.find((item) => item.dimension === "price")?.id} />
-                <MetricCard label="当日上涨比例" value={formatPercent(snapshot.metrics.breadthLatest)} change="合成的固定样本" icon={<GitCompareArrows size={16} />} evidence={snapshot.evidence.find((item) => item.dimension === "breadth")?.id} />
-                <MetricCard label="区间最大回撤" value={formatPercent(snapshot.metrics.maxDrawdown)} change="仅描述演示窗口" icon={<ArrowDownRight size={16} />} evidence={snapshot.evidence.find((item) => item.label.includes("回撤"))?.id} />
+              <section className="metric-grid" aria-label="研究指标">
+                <MetricCard label="20 日区间收益" value={formatPercent(snapshot.metrics.return20)} change={snapshot.metrics.return20 === null ? "观察窗口不足" : snapshot.synthetic ? "仅为合成价格变化" : "基于扶摇指数日线"} icon={<Activity size={16} />} evidence={snapshot.evidence.find((item) => item.dimension === "price")?.id} />
+                <MetricCard label="当日上涨比例" value={formatPercent(snapshot.metrics.breadthLatest)} change={snapshot.synthetic ? "合成固定样本" : qualityText(snapshot.dimensionStatuses.breadth.status)} icon={<GitCompareArrows size={16} />} evidence={snapshot.evidence.find((item) => item.dimension === "breadth")?.id} />
+                <MetricCard label="区间最大回撤" value={formatPercent(snapshot.metrics.maxDrawdown)} change={snapshot.synthetic ? "仅描述演示窗口" : "基于扶摇日线收盘价"} icon={<ArrowDownRight size={16} />} evidence={snapshot.evidence.find((item) => item.label.includes("回撤"))?.id} />
                 <MetricCard label="年化波动（20 日）" value={formatPercent(snapshot.metrics.volatility20)} change="252 日年化约定" icon={<Radio size={16} />} evidence={snapshot.evidence.find((item) => item.label.includes("波动"))?.id} />
               </section>
 
@@ -337,9 +339,9 @@ export function ResearchWorkspace() {
                 <div className="panel chart-panel">
                   <div className="panel-header"><div><span className="section-kicker">01 / PRICE STRUCTURE</span><h3>价格结构 <span className="chart-subtitle">— 归一化表现</span></h3></div><button className="panel-menu" type="button" title="指标说明"><CircleHelp size={16} /></button></div>
                   <div className="chart-legend"><span><i className="legend-line primary-line" />{snapshot.indexName}</span>{snapshot.comparisonSeries.map((series, index) => <span key={series.indexId}><i className={`legend-line ${index === 0 ? "large-line" : "small-line"}`} />{series.indexName}</span>)}</div>
-                  <div className="chart-frame">
+                    <div className="chart-frame">
                     <div className="chart-axis-labels"><span>相对表现</span><span>100 = 区间起点</span></div>
-                    <svg className="line-chart" viewBox="0 0 800 230" role="img" aria-label="主指数与大小盘合成代理的归一化演示序列">
+                    <svg className="line-chart" viewBox="0 0 800 230" role="img" aria-label={snapshot.synthetic ? "主指数与比较指数的合成归一化演示序列" : "主指数与对比指数的归一化表现序列"}>
                       <line x1="10" x2="790" y1="48" y2="48" className="chart-gridline" /><line x1="10" x2="790" y1="105" y2="105" className="chart-gridline" /><line x1="10" x2="790" y1="163" y2="163" className="chart-gridline" /><line x1="10" x2="790" y1="220" y2="220" className="chart-gridline" />
                       <path d={chartPath(priceChart.map((point) => point.normalized), chartMin, chartMax)} className="chart-line primary-chart-line" />
                       <path d={chartPath(firstComparison.map((point) => point.normalized), chartMin, chartMax)} className="chart-line large-chart-line" />
@@ -361,6 +363,7 @@ export function ResearchWorkspace() {
                   <div className="state-tag-list">{snapshot.stateTags.length ? snapshot.stateTags.map((tag) => <span className="state-tag" key={tag.id}><Activity size={13} />{tag.label}</span>) : <span className="empty-tag">当前演示序列没有触发已配置标签。</span>}</div>
                   <div className="status-divider" />
                   <div className="confidence-row"><span>核心证据覆盖</span><strong>{aiReport ? String(aiReport.evidenceCoverage) + "%" : "未计算"}</strong><small>按行情结构、市场宽度、风格三个维度的可用性计算；不代表涨跌概率。</small></div>
+                  {confidence && <div className="confidence-row"><span>当前归纳置信度</span><strong>{confidence.label}</strong><small>{confidence.reason}置信度描述证据对当前归纳的支持程度，不代表未来涨跌概率。</small></div>}
                   <div className="study-boundary"><ShieldCheck size={15} /><span>{snapshot.synthetic ? "标签描述合成历史；不表示未来走势。" : "AI 仅归纳本轮证据；不预测涨跌或给出交易指令。"}</span></div>
                 </div>
               </section>
@@ -389,7 +392,7 @@ export function ResearchWorkspace() {
               <section className="followup-section"><div><span className="section-kicker">CONTINUE RESEARCH</span><h3>沿着证据，继续问下去</h3><p>每次追问都会重新校验范围和数据可用性。</p></div><div className="followup-actions"><button type="button" onClick={() => void runResearch("style", "比较大盘与小盘指数的区间表现", true)}><GitCompareArrows size={15} />对比风格</button><button type="button" onClick={() => void runResearch("risk", "市场参与度与波动有哪些值得继续核对的变量？", true)}><Activity size={15} />检查风险变量</button><button type="button" onClick={() => void runResearch("historical", "指定历史阶段中，指数表现与市场参与度是否一致？", true)}><CalendarDays size={15} />继续研究此区间</button></div></section>
             </>}
 
-            <footer className="page-footer"><span>市场证据台 <i>·</i> 当前为 MVP 演示</span><span>研究性信息展示，不构成投资建议。</span><span><ShieldCheck size={13} />数据来源与时点需逐项验证</span></footer>
+            <footer className="page-footer"><span>市场证据台 <i>·</i> MVP 研究工作台</span><span>研究性信息展示，不构成投资建议。</span><span><ShieldCheck size={13} />数据来源与时点需逐项验证</span></footer>
           </div>
         </main>
       </div>

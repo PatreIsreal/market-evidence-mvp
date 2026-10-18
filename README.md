@@ -54,7 +54,7 @@ MODEL_THINKING_MODE=disabled
 
 ## 数据来源和局限
 
-扶摇官方接口结构与接入状态记录在 [`docs/data-capabilities.md`](docs/data-capabilities.md)。上证、沪深 300 与中证 1000 的 live 取数已验证；深证与创业板代码映射、数据展示授权仍待确认。市场宽度不能由最新快照回填旧历史日期。当前未实现指数估值、情绪、事件与 iFinD。
+扶摇官方接口结构与接入状态记录在 [`docs/data-capabilities.md`](docs/data-capabilities.md)。上证、深证成指、创业板、沪深 300 与中证 1000 的 live 取数已验证；市场宽度不能由最新快照回填旧历史日期，最近一次快照因时点不匹配被标为 stale。数据展示授权仍待确认。当前未实现指数估值、情绪、事件与 iFinD。
 
 演示序列为代码生成的合成数据，不是实际市场记录。live 上游失败不会静默降级为 demo。
 

@@ -18,6 +18,13 @@ export function snapshotToMarkdown(snapshot: ResearchSnapshot) {
   ];
 
   const report = snapshot.aiReport;
+  const reportContext = report
+    ? snapshot.synthetic
+      ? "> AI 归纳基于本轮合成演示证据，仅用于演示。"
+      : `> AI 归纳由 ${report.modelName} 基于本轮证据生成；请同时参考数据时点、口径与质量状态。`
+    : snapshot.synthetic
+      ? "> 本轮未生成 AI 研判；以下合成数据与代码计算仅用于演示。"
+      : "> 本轮未生成 AI 研判；导出仅包含已计算指标、来源状态与证据索引。";
   return [
     `# ${snapshot.indexName}市场状态研究`,
     "",
@@ -28,7 +35,7 @@ export function snapshotToMarkdown(snapshot: ResearchSnapshot) {
     `- 生成时间：${snapshot.generatedAt}`,
     `- 交易日说明：${snapshot.scope.calendarNote}`,
     "",
-    "> 当前导出只包含已计算指标、来源状态与证据索引。运行时 AI 未连接时，不生成市场结论。",
+    reportContext,
     "",
     "## 指标",
     "",
