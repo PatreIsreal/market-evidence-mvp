@@ -6,12 +6,15 @@ services:
     image: market-evidence-mvp:local
     container_name: market-evidence-mvp
     restart: unless-stopped
+    environment:
+      NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-certificates.crt
     ports:
       - "192.168.188.2:3180:3000"
     secrets:
       - app_env
     volumes:
       - wrangler-state:/app/.wrangler/state
+      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
     healthcheck:
       test:
         - CMD

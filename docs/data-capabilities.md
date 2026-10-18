@@ -15,7 +15,7 @@
 | 运行时模型 | 已配置并实测 | 使用 DeepSeek Chat Completions `deepseek-flash`；关闭默认思考模式后，研究计划、JSON 报告与证据引用校验端到端通过 |
 | 数据展示授权 | 待确认 | 官方文档公开了接口结构，但当前账户授权、页面展示、导出及公开托管的许可范围尚未验证 |
 | Sites 托管 | 私有站点已部署 | 站点默认私有；未登录 HTTP 返回 401；登录后页面由所有者验证 |
-| 私有服务器自托管 | 部署文件已准备 | Ubuntu 24.04、Docker Compose v2 已确认；容器构建与端口访问待首轮部署验证 |
+| 私有服务器自托管 | 已部署并实测 | Ubuntu 24.04 上 Docker 容器运行；绑定 `192.168.188.2:3180` VPN 地址；容器 health 与完整真实研究流通过 |
 
 接口设计参考：[扶摇指数数据](https://fuyao.aicubes.cn/docs/api-reference/a-share-index/)、[扶摇股票行情数据](https://fuyao.aicubes.cn/docs/api-reference/prices/)、[扶摇交易日历](https://fuyao.aicubes.cn/docs/api-reference/calendar/)。文档核对不等于真实账户调用通过。
 

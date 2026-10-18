@@ -24,6 +24,7 @@ Vitest 使用独立的 `vitest.config.ts`，不加载 Sites 的 Cloudflare Worke
 | 浏览器主链路 | 本地开发服务器 | 演示研究与证据抽屉已检查；下载行为和 AI 报告真实呈现待复核 |
 | 扶摇 + DeepSeek live 研究流 | 本地 Wrangler Worker runtime | HTTP 200、真实快照、`deepseek-flash` 计划与报告成功；证据引用校验通过，`done=complete` |
 | 自托管生产包 | 本地 Wrangler Worker runtime | `npm run build` 后 `start:selfhost` health 显示两类凭据已绑定；20 日研究流成功返回真实数据并通过 AI 报告校验 |
+| Ubuntu Docker 自托管 | 服务器 `192.168.188.2:3180` | 外部桌面 GET health／页面均返回 200；Docker health 为 healthy；CA bundle 挂载后真实研究流 `done=complete` |
 | Sites 部署与远程流式响应 | 私有站点已部署 | 未登录请求返回 401；登录后 UI／流式消费待所有者验证 |
 | 扶摇 + DeepSeek live 研究流 | 本地 Wrangler Worker runtime | HTTP 200、真实数据快照、`deepseek-flash` 计划和报告均成功；报告证据引用通过服务端校验，`done=complete` |
 | 自托管生产包 | 本地打包 Worker runtime | `npm run build` 后 `start:selfhost` health 配置为 live 且两类凭据均已绑定；20 日研究流完整返回并通过报告校验 |
@@ -43,4 +44,3 @@ Vitest 使用独立的 `vitest.config.ts`，不加载 Sites 的 Cloudflare Worke
 - 在交易日取得时点与最近完成交易日一致的完整快照后，验证宽度计算和分页完整性。
 - 浏览器下载和 AI 报告呈现仍待一次最终 UI 回归。
 - 通过 Sites 部署检查 GET health、POST 研究流和浏览器流式消费。
-- 服务器首次 Docker Compose 构建、健康检查和 VPN 地址访问仍需部署后核验。

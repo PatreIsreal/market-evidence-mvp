@@ -72,4 +72,4 @@ MODEL_THINKING_MODE=disabled
 
 ## 已知边界
 
-私有开发预览已部署：[打开市场证据台](https://market-evidence-desk-20261018.minty-genet-8078.chatgpt.site)。服务器版部署流程见[自托管部署](docs/self-hosted-deployment.md)；正式开放互联网访问前仍需配置 HTTPS、身份认证并核验数据展示授权。
+私有开发预览已部署：[打开市场证据台](https://market-evidence-desk-20261018.minty-genet-8078.chatgpt.site)。服务器版可经 VPN 访问：[http://192.168.188.2:3180](http://192.168.188.2:3180)。部署与更新说明见[自托管部署](docs/self-hosted-deployment.md)；正式开放互联网访问前仍需配置 HTTPS、身份认证并核验数据展示授权。

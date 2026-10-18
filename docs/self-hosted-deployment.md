@@ -51,4 +51,6 @@ docker compose down
 
 运行时凭据以 Docker Compose secret 文件挂载，入口脚本在容器启动时将其复制到容器内、交给专用非 root 用户读取；Dockerfile 和镜像构建上下文排除 `.dev.vars`。不要把它放入 Git、源码压缩包或镜像。
 
+自托管使用 Wrangler 的本地 Worker runtime。Compose 会只读挂载 Ubuntu／Debian 主机 CA bundle，并设置 `NODE_EXTRA_CA_CERTS`，让 Workerd 验证上游 HTTPS 证书；不要关闭 TLS 证书校验。
+
 应用服务使用 Wrangler 的本地 Worker runtime 托管 Vinext worker bundle。它适用于当前个人/内网 MVP；若要开放互联网访问，应再配置 HTTPS、身份认证及反向代理，并检查扶摇数据展示授权。
