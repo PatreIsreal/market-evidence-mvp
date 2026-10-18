@@ -1,0 +1,30 @@
+name: market-evidence-mvp
+
+services:
+  market-evidence:
+    build: .
+    image: market-evidence-mvp:local
+    container_name: market-evidence-mvp
+    restart: unless-stopped
+    ports:
+      - "192.168.188.2:3180:3000"
+    secrets:
+      - app_env
+    volumes:
+      - wrangler-state:/app/.wrangler/state
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+secrets:
+  app_env:
+    file: ./.dev.vars
+
+volumes:
+  wrangler-state:

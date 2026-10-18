@@ -63,15 +63,18 @@ describe("structured AI report", () => {
     const snapshot = liveSnapshot();
     let requestUrl = "";
     let authorization = "";
+    let thinkingMode: unknown;
     const fetcher: typeof fetch = async (url, init) => {
       requestUrl = String(url);
       authorization = new Headers(init?.headers).get("Authorization") ?? "";
+      thinkingMode = JSON.parse(String(init?.body)).thinking;
       return Response.json({ choices: [{ message: { content: JSON.stringify(modelResponse()) } }] });
     };
     const report = await createAiReport(input, snapshot, {
       MODEL_BASE_URL: "https://model.example/v1",
       MODEL_API_KEY: "test-secret",
       MODEL_NAME: "test-model",
+      MODEL_THINKING_MODE: "disabled",
     }, { fetcher });
 
     expect(requestUrl).toBe("https://model.example/v1/chat/completions");
@@ -79,6 +82,23 @@ describe("structured AI report", () => {
     expect(report.modelName).toBe("test-model");
     expect(report.evidenceCoverage).toBe(100);
     expect(report.observations[0]?.evidenceIds).toEqual(["E001"]);
+    expect(thinkingMode).toEqual({ type: "disabled" });
+  });
+
+  it("accepts a summary that cites six valid evidence items", async () => {
+    const snapshot = liveSnapshot();
+    const evidenceIds = snapshot.evidence.slice(0, 6).map((item) => item.id);
+    expect(evidenceIds).toHaveLength(6);
+    const fetcher: typeof fetch = async () => Response.json({
+      choices: [{ message: { content: JSON.stringify(modelResponse({ summaryEvidenceIds: evidenceIds })) } }],
+    });
+    const report = await createAiReport(input, snapshot, {
+      MODEL_BASE_URL: "https://model.example/v1",
+      MODEL_API_KEY: "test-secret",
+      MODEL_NAME: "test-model",
+    }, { fetcher });
+
+    expect(report.summaryEvidenceIds).toEqual(evidenceIds);
   });
 
   it("rejects unknown evidence references", async () => {

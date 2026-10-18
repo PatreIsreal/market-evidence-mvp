@@ -17,13 +17,16 @@ Vitest 使用独立的 `vitest.config.ts`，不加载 Sites 的 Cloudflare Worke
 
 | 检查 | 环境 | 结果 |
 | --- | --- | --- |
-| npm test | Node.js 25；合成数据与模拟扶摇／模型响应 | 7 个文件、25 项测试通过 |
+| npm test | Node.js 25；合成数据与模拟扶摇／模型响应 | 7 个文件、26 项测试通过 |
 | `npm run lint` | 本地源码 | 通过 |
 | `npm run typecheck` | TypeScript | 通过 |
 | npm run build | 本地 Vinext 生产构建 | 通过 |
 | 浏览器主链路 | 本地开发服务器 | 演示研究与证据抽屉已检查；下载行为和 AI 报告真实呈现待复核 |
-| 扶摇 live 冒烟 | 未配置真实 Key | 未执行；不能由模拟响应替代 |
+| 扶摇 + DeepSeek live 研究流 | 本地 Wrangler Worker runtime | HTTP 200、真实快照、`deepseek-flash` 计划与报告成功；证据引用校验通过，`done=complete` |
+| 自托管生产包 | 本地 Wrangler Worker runtime | `npm run build` 后 `start:selfhost` health 显示两类凭据已绑定；20 日研究流成功返回真实数据并通过 AI 报告校验 |
 | Sites 部署与远程流式响应 | 私有站点已部署 | 未登录请求返回 401；登录后 UI／流式消费待所有者验证 |
+| 扶摇 + DeepSeek live 研究流 | 本地 Wrangler Worker runtime | HTTP 200、真实数据快照、`deepseek-flash` 计划和报告均成功；报告证据引用通过服务端校验，`done=complete` |
+| 自托管生产包 | 本地打包 Worker runtime | `npm run build` 后 `start:selfhost` health 配置为 live 且两类凭据均已绑定；20 日研究流完整返回并通过报告校验 |
 
 ## 已覆盖行为
 
@@ -36,8 +39,8 @@ Vitest 使用独立的 `vitest.config.ts`，不加载 Sites 的 Cloudflare Worke
 
 ## 上线前仍要做
 
-- 使用真实服务端 Key 调用上证指数、对比指数和交易日历；核对当前代码映射、时间边界、字段可空语义和授权。
-- 验证扶摇全市场快照分页是否完整，并确认数据时点与实际已完成交易日一致。
-- 真实凭据失败时确认没有降级为演示值；检查页面显示的质量状态和数据时点。
-- 真实模型和扶摇凭据接入后做一次端到端主链路冒烟；当前使用可控 HTTP 替身验证了结构、引用和禁用输出。
+- 确认扶摇数据展示授权范围；再逐项核验深证成指与创业板代码映射。
+- 在交易日取得时点与最近完成交易日一致的完整快照后，验证宽度计算和分页完整性。
+- 浏览器下载和 AI 报告呈现仍待一次最终 UI 回归。
 - 通过 Sites 部署检查 GET health、POST 研究流和浏览器流式消费。
+- 服务器首次 Docker Compose 构建、健康检查和 VPN 地址访问仍需部署后核验。

@@ -4,13 +4,13 @@
 
 ## 当前交付状态
 
-工作台、合成演示、指标、证据抽屉、JSON／Markdown 导出、扶摇 REST 适配器和结构化 AI 报告适配器已进入实现。默认本地模式为清楚标注的合成演示。扶摇官方接口契约已核对，但真实 API Key、接口权限、字段映射、真实模型调用和托管部署尚未验证。
+工作台、合成演示、指标、证据抽屉、JSON／Markdown 导出、扶摇 REST 适配器和结构化 AI 报告适配器已实现。已在本地 live 模式完成扶摇真实行情与 DeepSeek `deepseek-flash` 的端到端冒烟：AI 研究计划和报告通过校验；最新全市场快照时点与最近完成交易日不一致时，市场宽度会明确标为过期。
 
-带有扶摇 Key 时，live 模式可以获取指数日线和最新全市场快照，按代码计算指标；宽度仅在快照时点与最近已完成交易日一致且分页完整时可用。配置 OpenAI Chat Completions 兼容的模型服务后，模型先从受限的行情、市场宽度、风格维度中选择研究范围，再基于返回证据生成结构化归纳、观察、反证和不确定事项；服务端会校验证据引用。iFinD MCP 尚未连接。缺少真实能力时，页面显示缺口，不会用演示值代替。
+live 模式会获取指数日线和最新全市场快照，按代码计算指标；宽度仅在快照时点与最近已完成交易日一致且分页完整时可用。模型先从受限的行情、市场宽度、风格维度中选择研究范围，再基于返回证据生成结构化归纳、观察、反证和不确定事项；服务端会校验证据引用。iFinD MCP 尚未连接。缺少真实能力时，页面显示缺口，不会用演示值代替。
 
 ## 本地运行
 
-要求 Node.js 22.13 或更高版本。安装依赖并启动：
+本地开发要求 Node.js 22.13 或更高版本。安装依赖并启动：
 
 ```sh
 npm install
@@ -39,9 +39,11 @@ FUYAO_API_KEY=仅服务端使用的密钥
 MODEL_BASE_URL=https://api.openai.com/v1
 MODEL_API_KEY=仅服务端使用的密钥
 MODEL_NAME=你的可用模型名称
+# DeepSeek 推荐关闭默认思考模式，以便稳定输出结构化 JSON
+MODEL_THINKING_MODE=disabled
 ```
 
-不要把真实密钥提交到 Git 或粘贴到聊天。只配置 Key 不代表接口权限、展示授权或数据质量已验证。模型端点须支持 Chat Completions 的 JSON Object 输出；模型报告中的摘要、观察和反证均须引用本轮证据 ID，否则会被隐藏。iFinD 变量目前只是预留。
+不要把真实密钥提交到 Git 或粘贴到聊天。只配置 Key 不代表接口权限、展示授权或数据质量已验证。模型端点须支持 Chat Completions 的 JSON Object 输出；模型报告中的摘要、观察和反证均须引用本轮证据 ID，否则会被隐藏。使用 DeepSeek 时，可将 `MODEL_BASE_URL` 设为 `https://api.deepseek.com`、`MODEL_NAME` 设为 `deepseek-flash`，并设置 `MODEL_THINKING_MODE=disabled`。iFinD 变量目前只是预留。
 
 ## 设计选择与 AI 职责
 
@@ -52,7 +54,7 @@ MODEL_NAME=你的可用模型名称
 
 ## 数据来源和局限
 
-扶摇官方接口结构与接入状态记录在 [`docs/data-capabilities.md`](docs/data-capabilities.md)。代码使用指数历史日线、近一年交易日历和全市场最新快照；指数代码映射、授权、真实响应及部署出网仍待 live 验证。市场宽度不能由最新快照回填旧历史日期。当前未实现指数估值、情绪、事件与 iFinD。
+扶摇官方接口结构与接入状态记录在 [`docs/data-capabilities.md`](docs/data-capabilities.md)。上证、沪深 300 与中证 1000 的 live 取数已验证；深证与创业板代码映射、数据展示授权仍待确认。市场宽度不能由最新快照回填旧历史日期。当前未实现指数估值、情绪、事件与 iFinD。
 
 演示序列为代码生成的合成数据，不是实际市场记录。live 上游失败不会静默降级为 demo。
 
@@ -65,8 +67,9 @@ MODEL_NAME=你的可用模型名称
 - [开发进度与阻塞](docs/progress.md)
 - [AI 使用与验证记录](docs/ai-usage-and-validation.md)
 - [测试说明](docs/testing.md)
+- [自托管部署](docs/self-hosted-deployment.md)
 - [实现决策](docs/decisions.md)
 
 ## 已知边界
 
-私有开发预览已部署：[打开市场证据台](https://market-evidence-desk-20261018.minty-genet-8078.chatgpt.site)。访问需要 ChatGPT 登录；当前未配置真实扶摇与模型凭据，正式 MVP 还需完成真实数据／模型冒烟和登录后的远程主链路验证。
+私有开发预览已部署：[打开市场证据台](https://market-evidence-desk-20261018.minty-genet-8078.chatgpt.site)。服务器版部署流程见[自托管部署](docs/self-hosted-deployment.md)；正式开放互联网访问前仍需配置 HTTPS、身份认证并核验数据展示授权。

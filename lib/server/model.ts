@@ -13,7 +13,7 @@ const statementSchema = z.object({
 
 const draftSchema = z.object({
   summary: z.string().trim().min(12).max(500),
-  summaryEvidenceIds: z.array(z.string()).min(1).max(5),
+  summaryEvidenceIds: z.array(z.string()).min(1).max(10),
   observations: z.array(statementSchema).min(1).max(5),
   counterpoints: z.array(statementSchema).max(4),
   uncertainties: z.array(z.object({
@@ -25,6 +25,12 @@ const draftSchema = z.object({
 
 type ModelSource = Record<string, string | undefined>;
 type Fetcher = typeof fetch;
+
+function modelModeOptions(source: ModelSource) {
+  return source.MODEL_THINKING_MODE?.trim() === "disabled"
+    ? { thinking: { type: "disabled" as const } }
+    : {};
+}
 
 async function requestModelJson(
   systemPrompt: string,
@@ -58,6 +64,7 @@ async function requestModelJson(
         temperature: 0.15,
         max_tokens: options.maxTokens,
         response_format: { type: "json_object" },
+        ...modelModeOptions(source),
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -203,10 +210,11 @@ export async function createAiReport(
         temperature: 0.15,
         max_tokens: 1800,
         response_format: { type: "json_object" },
+        ...modelModeOptions(source),
         messages: [
           {
             role: "system",
-            content: "你是面向 A 股市场状态研究的证据归纳助手。只描述已给出的事实，不预测未来涨跌、不估计涨跌概率、不提出买卖、仓位或收益建议。只能使用给定的证据 ID；summary 必须有 summaryEvidenceIds，且每条 observation 和 counterpoint 必须带至少一个本轮证据 ID。区分事实、解释和不确定性。若数据是合成演示，拒绝将其解释为真实市场事实。只返回符合要求的 JSON 对象，字段为 summary、summaryEvidenceIds、observations[{statement,evidenceIds}]、counterpoints[{statement,evidenceIds}]、uncertainties[{statement,dimension}]、reevaluationConditionIds。所有陈述使用简体中文。",
+            content: "你是面向 A 股市场状态研究的证据归纳助手。只描述已给出的事实，不预测未来涨跌、不估计涨跌概率、不提出买卖、仓位或收益建议。只能使用给定的证据 ID；summary 必须带 1 到 10 个 summaryEvidenceIds，且每条 observation 和 counterpoint 必须带 1 到 5 个本轮证据 ID。区分事实、解释和不确定性。若数据是合成演示，拒绝将其解释为真实市场事实。只返回符合要求的 JSON 对象，字段为 summary、summaryEvidenceIds、observations[{statement,evidenceIds}]、counterpoints[{statement,evidenceIds}]、uncertainties[{statement,dimension}]、reevaluationConditionIds。每个 uncertainties.dimension 必须逐字使用以下一个值：price、breadth、style、valuation、liquidity、sentiment、events；不要翻译或自造维度值。所有陈述使用简体中文。",
           },
           {
             role: "user",
