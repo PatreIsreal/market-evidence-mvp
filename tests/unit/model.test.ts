@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { researchInputSchema } from "@/lib/contracts/research";
 import { createDemoSnapshot } from "@/lib/server/demo-snapshot";
-import { createAiReport } from "@/lib/server/model";
+import { createAiPlan, createAiReport } from "@/lib/server/model";
 
 const input = researchInputSchema.parse({
   question: "市场价格结构和参与度是否一致？",
@@ -34,6 +34,20 @@ function modelResponse(overrides: Record<string, unknown> = {}) {
 }
 
 describe("structured AI report", () => {
+  it("lets the model choose supported research dimensions while code keeps price data mandatory", async () => {
+    const fetcher: typeof fetch = async () => Response.json({
+      choices: [{ message: { content: JSON.stringify({ analysisAngle: "先核对价格结构，再检查市场参与情况。", dimensions: ["breadth"] }) } }],
+    });
+    const plan = await createAiPlan(input, {
+      MODEL_BASE_URL: "https://model.example/v1",
+      MODEL_API_KEY: "test-secret",
+      MODEL_NAME: "test-model",
+    }, { fetcher });
+
+    expect(plan.dimensions).toEqual(["price", "breadth"]);
+    expect(plan.analysisAngle).toContain("参与情况");
+  });
+
   it("keeps synthetic demo evidence out of the model", async () => {
     const snapshot = createDemoSnapshot(input, "2026-10-18T02:00:00.000Z");
     let requested = false;

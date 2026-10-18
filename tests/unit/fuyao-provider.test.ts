@@ -84,6 +84,20 @@ describe("Fuyao REST adapter", () => {
     expect(mock.calls.some((call) => call.includes("prices/snapshot"))).toBe(false);
   });
 
+  it("executes only the safe dimensions selected by a validated research plan", async () => {
+    const mock = mockProvider();
+    const snapshot = await createFuyaoSnapshot(liveInput(), { FUYAO_API_KEY: "test-key" }, () => undefined, {
+      fetcher: mock.fetcher,
+      now: new Date("2026-10-16T10:00:00.000Z"),
+      dimensions: ["price"],
+    });
+
+    expect(mock.calls.filter((call) => call.includes("prices/historical"))).toHaveLength(1);
+    expect(mock.calls.some((call) => call.includes("prices/snapshot"))).toBe(false);
+    expect(snapshot.dimensionStatuses.breadth.explanation).toContain("未请求");
+    expect(snapshot.dimensionStatuses.style.explanation).toContain("未请求");
+  });
+
   it("requires a server-side API key and rejects non-HTTPS provider URLs", async () => {
     await expect(createFuyaoSnapshot(liveInput(), {}, () => undefined)).rejects.toMatchObject({ code: "CONFIG_MISSING" });
     await expect(createFuyaoSnapshot(liveInput(), { FUYAO_API_KEY: "test-key", FUYAO_BASE_URL: "http://localhost" }, () => undefined))

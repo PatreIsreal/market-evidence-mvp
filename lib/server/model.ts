@@ -1,5 +1,10 @@
 import { z } from "zod";
-import type { AiReport, Dimension, ResearchInput, ResearchSnapshot } from "../contracts/research";
+import type { AiReport, AiResearchPlan, Dimension, ResearchInput, ResearchSnapshot } from "../contracts/research";
+
+const planSchema = z.object({
+  analysisAngle: z.string().trim().min(8).max(240),
+  dimensions: z.array(z.enum(["price", "breadth", "style"])).min(1).max(3),
+});
 
 const statementSchema = z.object({
   statement: z.string().trim().min(8).max(320),
@@ -21,11 +26,99 @@ const draftSchema = z.object({
 type ModelSource = Record<string, string | undefined>;
 type Fetcher = typeof fetch;
 
+async function requestModelJson(
+  systemPrompt: string,
+  userPrompt: string,
+  source: ModelSource,
+  options: { fetcher?: Fetcher; signal?: AbortSignal; maxTokens: number },
+): Promise<{ data: unknown; modelName: string }> {
+  const baseUrl = source.MODEL_BASE_URL?.trim().replace(/\/+$/, "");
+  const apiKey = source.MODEL_API_KEY;
+  const modelName = source.MODEL_NAME?.trim();
+  if (!baseUrl || !apiKey || !modelName) throw new ModelProviderError("尚未配置服务端模型地址、API Key 与模型名称。", "CONFIG_MISSING");
+
+  let endpoint: URL;
+  try {
+    endpoint = new URL(baseUrl + "/chat/completions");
+  } catch {
+    throw new ModelProviderError("模型 API 地址不是有效 URL。", "CONFIG_INVALID");
+  }
+  if (endpoint.protocol !== "https:") throw new ModelProviderError("模型 API 地址必须使用 HTTPS。", "CONFIG_INVALID");
+
+  const fetcher = options.fetcher ?? fetch;
+  const timeout = AbortSignal.timeout(25_000);
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+  let response: Response;
+  try {
+    response = await fetcher(endpoint, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        model: modelName,
+        temperature: 0.15,
+        max_tokens: options.maxTokens,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      }),
+      signal,
+    });
+  } catch {
+    throw new ModelProviderError("模型请求失败或超时；已保留本轮数据与规则结果。", "MODEL_NETWORK_ERROR");
+  }
+  if (!response.ok) throw new ModelProviderError("模型服务返回 HTTP " + response.status + "；已保留本轮数据与规则结果。", "MODEL_UPSTREAM_ERROR");
+
+  let envelope: unknown;
+  try {
+    envelope = await response.json();
+  } catch {
+    throw new ModelProviderError("模型服务返回了无法解析的 JSON。", "MODEL_INVALID_RESPONSE");
+  }
+  const content = (envelope as { choices?: Array<{ message?: { content?: unknown } }> })?.choices?.[0]?.message?.content;
+  if (typeof content !== "string") throw new ModelProviderError("模型响应缺少结构化文本。", "MODEL_INVALID_RESPONSE");
+  try {
+    return { data: JSON.parse(content) as unknown, modelName };
+  } catch {
+    throw new ModelProviderError("模型输出不是有效 JSON；已保留本轮数据与规则结果。", "MODEL_INVALID_RESPONSE");
+  }
+}
+
 export class ModelProviderError extends Error {
   constructor(message: string, readonly code = "MODEL_FAILED") {
     super(message);
     this.name = "ModelProviderError";
   }
+}
+
+export async function createAiPlan(
+  input: ResearchInput,
+  source: ModelSource,
+  options: { fetcher?: Fetcher; signal?: AbortSignal } = {},
+): Promise<AiResearchPlan> {
+  const response = await requestModelJson(
+    "你负责为 A 股市场状态研究选择数据维度。只允许选择 price（指数行情）、breadth（最近完成交易日的全市场上涨参与度）和 style（沪深 300 与中证 1000 对比）。不能生成交易建议、预测或任意工具名、代码、URL、参数。无论用户问题如何，price 都是必需维度。只返回 JSON：analysisAngle、dimensions。",
+    JSON.stringify({
+      question: input.question,
+      requestedFocus: input.scope.focus,
+      availableDimensions: [
+        { id: "price", description: "主指数的历史日线、收益、均线、回撤、波动与成交额" },
+        { id: "breadth", description: "仅最近已完成交易日可用的全市场涨跌家数快照；历史区间不回填" },
+        { id: "style", description: "主指数之外的沪深 300 与中证 1000 同期指数表现" },
+      ],
+      sourceLimits: "估值、情绪、新闻事件和历史宽度序列尚未接入。",
+    }),
+    source,
+    { ...options, maxTokens: 500 },
+  );
+  const parsed = planSchema.safeParse(response.data);
+  if (!parsed.success) throw new ModelProviderError("模型研究计划未通过结构校验；将使用代码默认计划。", "PLAN_VALIDATION_FAILED");
+  return {
+    ...parsed.data,
+    dimensions: Array.from(new Set(["price" as const, ...parsed.data.dimensions])),
+    modelName: response.modelName,
+  };
 }
 
 const restrictedAdvice = /(保证收益|稳赚|必涨|必跌|明天(?:一定|必然)?(?:涨|跌)|上涨概率|下跌概率|满仓|加仓|减仓|买入|卖出|买哪只|卖哪只|仓位建议|投资建议|buy\s+now|sell\s+now|guaranteed\s+(?:return|profit))/i;

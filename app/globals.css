@@ -356,6 +356,7 @@ button:disabled { cursor: wait; opacity: .68; }
 .tool-plan-row > span:nth-child(2) { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
 .tool-plan-row strong { color: #243449; font-size: 12px; font-weight: 600; }
 .tool-plan-row small, .tool-plan-state { color: #77869b; font-size: 11px; }
+.plan-angle { margin: -4px 0 9px; color: #65778a; font-size: 10px; line-height: 1.6; }
 .date-range-row { display: flex; align-items: end; gap: 14px; padding: 2px 0 14px; }
 .date-field { display: flex; min-width: 170px; flex-direction: column; gap: 6px; color: #64748b; font-size: 11px; }
 .date-field input { min-height: 38px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; padding: 0 10px; color: #26364b; font-size: 12px; }

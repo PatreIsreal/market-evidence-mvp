@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { researchInputSchema } from "@/lib/contracts/research";
 import { createDemoSnapshot } from "@/lib/server/demo-snapshot";
 import { createFuyaoSnapshot, FuyaoProviderError } from "@/lib/server/providers/fuyao";
-import { createAiReport, ModelProviderError } from "@/lib/server/model";
+import { createAiPlan, createAiReport, ModelProviderError } from "@/lib/server/model";
 import { readRuntimeConfig } from "@/lib/server/runtime";
 
 export const dynamic = "force-dynamic";
@@ -106,30 +106,59 @@ export async function POST(request: Request) {
           return;
         }
 
-        const comparisons = input.scope.comparisonIndexes.filter((id) => id !== input.scope.primaryIndex);
+        let dimensions: Array<"price" | "breadth" | "style"> = ["price", "breadth", "style"];
+        let aiPlanSucceeded = false;
+        let analysisAngle: string = input.scope.focus;
+        if (config.modelConfigured) {
+          emit("tool_started", { callId: "model-plan", toolName: "runtime_model", purpose: "根据问题选择本轮研究维度" });
+          try {
+            const plan = await createAiPlan(input, source, { signal: request.signal });
+            dimensions = plan.dimensions;
+            analysisAngle = plan.analysisAngle;
+            aiPlanSucceeded = true;
+            emit("tool_finished", { callId: "model-plan", status: "available", mode: "live", modelName: plan.modelName });
+          } catch (error) {
+            const modelError = error instanceof ModelProviderError ? error : null;
+            emit("tool_finished", { callId: "model-plan", status: "failed", mode: "live" });
+            emit("warning", {
+              code: modelError?.code ?? "PLAN_FAILED",
+              message: (modelError?.message ?? "模型计划未通过校验。") + " 本轮继续使用代码默认的行情、宽度和风格计划。",
+              affectedDimensions: [],
+            });
+          }
+        }
+        const comparisons = dimensions.includes("style")
+          ? input.scope.comparisonIndexes.filter((id) => id !== input.scope.primaryIndex)
+          : [];
+        const calls = [
+          ...(config.modelConfigured ? [{ callId: "model-plan", toolName: "runtime_model", purpose: "选择研究维度", status: aiPlanSucceeded ? "available" : "failed" }] : []),
+          { callId: "calendar", toolName: "get_a_share_calendar_trading_days", purpose: "确定最近已完成的 A 股交易日", status: "planned" },
+          { callId: "index-primary", toolName: "get_a_share_index_prices_historical", purpose: "读取主观察指数历史日线", status: "planned" },
+          ...comparisons.map((_, index) => ({ callId: "index-comparison-" + (index + 1), toolName: "get_a_share_index_prices_historical", purpose: "读取同期对比指数日线", status: "planned" })),
+          ...(dimensions.includes("breadth") ? [{ callId: "market-snapshot-1", toolName: "get_a_share_prices_snapshot", purpose: "读取最新全市场行情以计算市场宽度", status: "planned" }] : []),
+          ...(config.modelConfigured ? [{ callId: "model-report", toolName: "runtime_model", purpose: "生成有证据引用的归纳与反证", status: "planned" }] : []),
+        ];
         emit("plan", {
-          origin: "fuyao_rest_api",
-          intent: input.scope.focus,
-          calls: [
-            { callId: "calendar", toolName: "get_a_share_calendar_trading_days", purpose: "确定最近已完成的 A 股交易日", status: "planned" },
-            { callId: "index-primary", toolName: "get_a_share_index_prices_historical", purpose: "读取主观察指数历史日线", status: "planned" },
-            ...comparisons.map((_, index) => ({ callId: `index-comparison-${index + 1}`, toolName: "get_a_share_index_prices_historical", purpose: "读取同期对比指数日线", status: "planned" })),
-            { callId: "market-snapshot-1", toolName: "get_a_share_prices_snapshot", purpose: "读取最新全市场行情以计算市场宽度", status: "planned" },
-          ],
-          requiredDimensions: ["price", "breadth", "style"],
-          optionalDimensions: ["liquidity", "valuation", "sentiment", "events"],
+          origin: config.modelConfigured ? aiPlanSucceeded ? "model" : "rule_fallback" : "code_default",
+          intent: analysisAngle,
+          calls,
+          requiredDimensions: dimensions,
+          optionalDimensions: [],
         });
         try {
-          const snapshot = await createFuyaoSnapshot(input, source, emit, { signal: request.signal });
+          const snapshot = await createFuyaoSnapshot(input, source, emit, { signal: request.signal, dimensions });
           emit("scope_resolved", { scope: snapshot.scope, mode: "live", source: snapshot.sourceLabel });
           emit("snapshot", snapshot);
           if (config.modelConfigured) {
             try {
+              emit("tool_started", { callId: "model-report", toolName: "runtime_model", purpose: "依据本轮证据生成结构化归纳" });
               const report = await createAiReport(input, snapshot, source, { signal: request.signal });
+              emit("tool_finished", { callId: "model-report", status: "available", mode: "live", modelName: report.modelName });
               emit("report", report);
-              emit("done", { outcome: "complete", mode: "live", reportId: snapshot.reportId });
+              emit("done", { outcome: aiPlanSucceeded ? "complete" : "partial", mode: "live", reportId: snapshot.reportId });
             } catch (error) {
               const modelError = error instanceof ModelProviderError ? error : null;
+              emit("tool_finished", { callId: "model-report", status: "failed", mode: "live" });
               emit("warning", {
                 code: modelError?.code ?? "MODEL_FAILED",
                 message: modelError?.message ?? "AI 研判未完成；本轮真实数据、规则标签与证据仍可查看。",

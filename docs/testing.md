@@ -17,7 +17,7 @@ Vitest 使用独立的 `vitest.config.ts`，不加载 Sites 的 Cloudflare Worke
 
 | 检查 | 环境 | 结果 |
 | --- | --- | --- |
-| npm test | Node.js 25；合成数据与模拟扶摇／模型响应 | 7 个文件、23 项测试通过 |
+| npm test | Node.js 25；合成数据与模拟扶摇／模型响应 | 7 个文件、25 项测试通过 |
 | `npm run lint` | 本地源码 | 通过 |
 | `npm run typecheck` | TypeScript | 通过 |
 | npm run build | 本地 Vinext 生产构建 | 通过 |

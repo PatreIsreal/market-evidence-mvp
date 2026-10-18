@@ -155,6 +155,12 @@ export type AiReport = {
   modelName: string;
 };
 
+export type AiResearchPlan = {
+  analysisAngle: string;
+  dimensions: Array<"price" | "breadth" | "style">;
+  modelName: string;
+};
+
 export type ResearchSnapshot = {
   snapshotId: string;
   reportId: string;

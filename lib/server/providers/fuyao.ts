@@ -220,7 +220,7 @@ export async function createFuyaoSnapshot(
   input: ResearchInput,
   source: Record<string, string | undefined>,
   emit: EventEmitter,
-  options: { fetcher?: Fetcher; now?: Date; signal?: AbortSignal } = {},
+  options: { fetcher?: Fetcher; now?: Date; signal?: AbortSignal; dimensions?: Array<"price" | "breadth" | "style"> } = {},
 ): Promise<ResearchSnapshot> {
   const apiKey = source.FUYAO_API_KEY;
   if (!apiKey) throw new FuyaoProviderError("尚未配置扶摇 API Key。", "CONFIG_MISSING");
@@ -234,6 +234,7 @@ export async function createFuyaoSnapshot(
   if (parsedBase.protocol !== "https:") throw new FuyaoProviderError("扶摇 API 地址必须使用 HTTPS。", "CONFIG_INVALID");
   const fetcher = options.fetcher ?? fetch;
   const now = options.now ?? new Date();
+  const requestedDimensions = options.dimensions ?? ["price", "breadth", "style"];
   const calendarResult = await callFuyao({
     baseUrl,
     apiKey,
@@ -270,7 +271,9 @@ export async function createFuyaoSnapshot(
     throw new FuyaoProviderError("扶摇指数历史 K 线当前只支持最近五年；请选择较新的日期区间。", "DATE_RANGE_UNSUPPORTED");
   }
 
-  const comparisonIds = input.scope.comparisonIndexes.filter((id) => id !== input.scope.primaryIndex).slice(0, 2);
+  const comparisonIds = requestedDimensions.includes("style")
+    ? input.scope.comparisonIndexes.filter((id) => id !== input.scope.primaryIndex).slice(0, 2)
+    : [];
   const queryHistory = async (indexId: ResearchInput["scope"]["primaryIndex"], callId: string, primary: boolean) => {
     const result = await callFuyao({
       baseUrl,
@@ -334,11 +337,13 @@ export async function createFuyaoSnapshot(
   if (amountRatio20 !== null) addEvidence(evidence, "liquidity", "指数成交额相对前 20 日均值", amountRatio20, "倍", dateList(primaryPoints.slice(-21)), "amountRatio20", "当日成交额 / 前 20 个有效日成交额均值", ["turnover"], "fuyao.index.daily", `${indexNames[input.scope.primaryIndex]}指数成交额，人民币元`, primarySourceUrl);
 
   let breadthSeries: ResearchSnapshot["breadthSeries"] = [];
-  let breadthStatus: ResearchSnapshot["dimensionStatuses"][Dimension] = { status: "unavailable", explanation: "所选日期并非最近已完成交易日；接口只提供最新全市场快照，无法回填历史宽度。", dataAsOf: null };
+  let breadthStatus: ResearchSnapshot["dimensionStatuses"][Dimension] = requestedDimensions.includes("breadth")
+    ? { status: "unavailable", explanation: "所选日期并非最近已完成交易日；接口只提供最新全市场快照，无法回填历史宽度。", dataAsOf: null }
+    : { status: "unavailable", explanation: "本轮 AI 研究计划未请求市场宽度；如需此维度，可在问题中询问市场参与度。", dataAsOf: null };
   let breadthLatest: number | null = null;
   let eBreadth: string | null = null;
   const isLatestCompletedDate = Boolean(latestCompleted && endDate === latestCompleted && actualEnd === latestCompleted);
-  if (isLatestCompletedDate) {
+  if (isLatestCompletedDate && requestedDimensions.includes("breadth")) {
     try {
       const allItems: Array<z.infer<typeof snapshotSchema>["item"][number]> = [];
       const firstPage = await callFuyao({
@@ -422,7 +427,7 @@ export async function createFuyaoSnapshot(
     : { status: "missing", explanation: "扶摇在所选范围内没有返回有效指数日线。", dataAsOf: primaryDataAsOf };
   const comparisonFailures = comparisonResults.filter((result) => result.error).length;
   const styleStatus: ResearchSnapshot["dimensionStatuses"][Dimension] = !comparisonIds.length
-    ? { status: "unavailable", explanation: "没有可用的对比指数。", dataAsOf: null }
+    ? { status: "unavailable", explanation: "本轮研究计划未请求对比指数。", dataAsOf: null }
     : comparisonFailures
       ? { status: "failed", explanation: comparisonResults.map((result) => result.error).filter(Boolean).join("；"), dataAsOf: null }
       : largePoints.length > 0 && smallPoints.length > 0 && recentAlignedDates.length >= 21
