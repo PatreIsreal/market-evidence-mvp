@@ -155,9 +155,16 @@ export async function POST(request: Request) {
             try {
               emit("tool_started", { callId: "model-report", toolName: "runtime_model", purpose: "依据本轮证据生成结构化归纳" });
               const report = await createAiReport(input, snapshot, source, { signal: request.signal });
-              emit("tool_finished", { callId: "model-report", status: "available", mode: "live", modelName: report.modelName });
+              emit("tool_finished", { callId: "model-report", status: "available", mode: "live", modelName: report.modelName, generationMode: report.generationMode });
               emit("report", report);
-              emit("done", { outcome: aiPlanSucceeded ? "complete" : "partial", mode: "live", reportId: snapshot.reportId });
+              if (report.generationMode !== "model") {
+                emit("warning", {
+                  code: report.generationMode === "recovered" ? "REPORT_RECOVERED" : "REPORT_RULE_FALLBACK",
+                  message: report.recoveryNote ?? "报告结论已通过恢复流程生成。",
+                  affectedDimensions: [],
+                });
+              }
+              emit("done", { outcome: "complete", mode: "live", reportId: snapshot.reportId });
             } catch (error) {
               const modelError = error instanceof ModelProviderError ? error : null;
               emit("tool_finished", { callId: "model-report", status: "failed", mode: "live" });

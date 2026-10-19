@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AiReport, AiResearchPlan, Dimension, ResearchInput, ResearchSnapshot } from "../contracts/research";
+import { dimensionLabels, type AiReport, type AiResearchPlan, type Dimension, type ResearchInput, type ResearchSnapshot } from "../contracts/research";
 
 const planSchema = z.object({
   analysisAngle: z.string().trim().min(8).max(240),
@@ -22,6 +22,8 @@ const draftSchema = z.object({
   })).max(7),
   reevaluationConditionIds: z.array(z.string()).max(10),
 });
+
+const recoverySummarySchema = z.object({ summary: z.string().trim().min(12).max(500) });
 
 type ModelSource = Record<string, string | undefined>;
 type Fetcher = typeof fetch;
@@ -276,30 +278,130 @@ export async function createAiReport(
       signal,
     });
   } catch {
-    throw new ModelProviderError("模型请求失败或超时；已保留本轮数据与规则结果。", "MODEL_NETWORK_ERROR");
+    return createRuleFallbackReport(snapshot, input, modelName, "模型请求失败或超时");
   }
-  if (!response.ok) throw new ModelProviderError(`模型服务返回 HTTP ${response.status}；已保留本轮数据与规则结果。`, "MODEL_UPSTREAM_ERROR");
+  if (!response.ok) return createRuleFallbackReport(snapshot, input, modelName, "模型服务返回 HTTP " + response.status);
 
   let envelope: unknown;
   try {
     envelope = await response.json();
   } catch {
-    throw new ModelProviderError("模型服务返回了无法解析的 JSON。", "MODEL_INVALID_RESPONSE");
+    return createRuleFallbackReport(snapshot, input, modelName, "模型服务返回无法解析的响应");
   }
   const content = (envelope as { choices?: Array<{ message?: { content?: unknown } }> })?.choices?.[0]?.message?.content;
-  if (typeof content !== "string") throw new ModelProviderError("模型响应缺少结构化文本。", "MODEL_INVALID_RESPONSE");
+  if (typeof content !== "string") return createRuleFallbackReport(snapshot, input, modelName, "模型响应缺少结构化文本");
 
-  let rawDraft: unknown;
+  let rawDraft: unknown = null;
   try {
     rawDraft = JSON.parse(content);
-  } catch {
-    throw new ModelProviderError("模型输出不是有效 JSON；已保留本轮数据与规则结果。", "MODEL_INVALID_RESPONSE");
-  }
+  } catch { /* Treat unparsable output as a structural failure and run the recovery path. */ }
   const parsed = draftSchema.safeParse(rawDraft);
-  if (!parsed.success) throw new ModelProviderError("模型输出未通过报告结构校验；已保留本轮数据与规则结果。", "REPORT_VALIDATION_FAILED");
-  checkCitations(parsed.data, snapshot, input);
+  let validationFailure = rawDraft === null ? "MODEL_INVALID_JSON" : "REPORT_VALIDATION_FAILED";
+  if (parsed.success) {
+    try {
+      checkCitations(parsed.data, snapshot, input);
+      return {
+        ...parsed.data,
+        evidenceCoverage: getEvidenceCoverage(snapshot),
+        modelName,
+        generationMode: "model",
+        recoveryNote: null,
+      };
+    } catch {
+      validationFailure = "REPORT_CITATION_FAILED";
+    }
+  }
 
+  const fallbackParts = buildFallbackParts(snapshot, input);
+  try {
+    const recovery = await requestModelJson(
+      "你负责修复 A 股研究报告结论。只返回 JSON：{\"summary\":\"...\"}。用简体中文写 2 至 3 句直接结论，明确主要矛盾和证据边界，不预测涨跌，不给买卖或仓位建议。不要输出阿拉伯数字、百分比或日期，不要虚构证据；证据不足时明确说无法判断。",
+      JSON.stringify({
+        question: input.question,
+        actualPeriod: [snapshot.scope.actualStartDate, snapshot.scope.actualEndDate],
+        evidence: snapshot.evidence.filter((item) => item.status === "available").slice(0, 12)
+          .map(({ id, dimension, label, value, unit }) => ({ id, dimension, label, value, unit })),
+        ruleTags: snapshot.stateTags.map(({ label }) => label),
+        dimensionStatuses: snapshot.dimensionStatuses,
+      }),
+      source,
+      { fetcher, signal: options.signal, maxTokens: 500 },
+    );
+    const summary = recoverySummarySchema.safeParse(recovery.data);
+    if (summary.success && !restrictedAdvice.test(summary.data.summary) && numericTokens(summary.data.summary).length === 0) {
+      const recovered = { ...fallbackParts, summary: summary.data.summary };
+      checkCitations(recovered, snapshot, input);
+      return {
+        ...recovered,
+        modelName: recovery.modelName,
+        generationMode: "recovered",
+        recoveryNote: "完整报告未通过结构或引用校验；系统重新请求模型生成简化结论，并以本轮证据索引和代码计算的复核条件补全报告。",
+      };
+    }
+  } catch {
+    // Keep the completed data run reviewable with a deterministic conclusion.
+  }
+
+  return {
+    ...fallbackParts,
+    modelName,
+    generationMode: "rule_fallback",
+    recoveryNote: "模型完整报告未通过校验（" + validationFailure + "），简化结论也未通过校验；以下结论由服务端根据本轮已校验数据和规则标签生成。",
+  };
+}
+
+function createRuleFallbackReport(snapshot: ResearchSnapshot, input: ResearchInput, modelName: string, reason: string): AiReport {
+  return {
+    ...buildFallbackParts(snapshot, input),
+    modelName,
+    generationMode: "rule_fallback",
+    recoveryNote: reason + "；以下结论由服务端根据本轮已校验数据和规则标签生成。",
+  };
+}
+
+function getEvidenceCoverage(snapshot: ResearchSnapshot) {
   const coreDimensions: Dimension[] = ["price", "breadth", "style", "valuation", "liquidity", "sentiment", "events"];
-  const evidenceCoverage = Math.round(coreDimensions.filter((dimension) => snapshot.dimensionStatuses[dimension].status === "available").length / coreDimensions.length * 100);
-  return { ...parsed.data, evidenceCoverage, modelName };
+  return Math.round(coreDimensions.filter((dimension) => snapshot.dimensionStatuses[dimension].status === "available").length / coreDimensions.length * 100);
+}
+
+function buildFallbackParts(snapshot: ResearchSnapshot, input: ResearchInput) {
+  const usableEvidence = snapshot.evidence.filter((item) => item.status === "available");
+  const keyEvidence = ["price", "breadth", "events", "style", "liquidity", "sentiment"]
+    .flatMap((dimension) => {
+      const item = usableEvidence.find((entry) => entry.dimension === dimension && (typeof entry.value === "number" || dimension === "events"));
+      return item ? [item] : [];
+    }).slice(0, 5);
+  const tag = snapshot.stateTags.find((item) => item.evidenceIds.some((id) => usableEvidence.some((entry) => entry.id === id)));
+  const hasCoreData = snapshot.metrics.return20 !== null || snapshot.metrics.breadthLatest !== null;
+  const summary = !hasCoreData
+    ? "现有证据不足，无法对" + input.question + "作出充分判断；本轮没有可用的核心行情结构或市场宽度指标。结论仅适用于本次取数区间与数据源状态。"
+    : tag
+      ? "本轮服务端规则根据已取得证据识别为“" + tag.label + "”，这是对" + snapshot.scope.actualStartDate + "至" + snapshot.scope.actualEndDate + "区间及本次可用维度的状态归纳。缺失维度和单日快照限制仍可能改变解释，需结合下方复核条件重新评估；这不是未来走势判断。"
+      : "本轮可用数据支持描述" + snapshot.indexName + "在" + snapshot.scope.actualStartDate + "至" + snapshot.scope.actualEndDate + "区间的市场状态，但现有证据不足以形成更强的综合判断。结论受可用维度、数据时点和口径限制，不构成未来走势判断。";
+  const observations = keyEvidence.map((item) => ({
+    statement: typeof item.value === "number"
+      ? item.label + "记录为 " + Number(item.value.toString()).toFixed(2) + item.unit + "；该指标按其标注的窗口与口径描述" + dimensionLabels[item.dimension] + "。"
+      : item.label + "属于本轮收到的资讯候选，尚未核验事件发生时间、重要性和因果影响。",
+    evidenceIds: [item.id],
+  }));
+  if (observations.length === 0 && snapshot.evidence[0]) {
+    const item = snapshot.evidence[0];
+    observations.push({
+      statement: "本轮已取得“" + item.label + "”证据，但其状态为" + item.status + "，当前不能据此作强结论。",
+      evidenceIds: [item.id],
+    });
+  }
+  const uncertainties = (Object.entries(snapshot.dimensionStatuses) as Array<[Dimension, ResearchSnapshot["dimensionStatuses"][Dimension]]>)
+    .filter(([, status]) => status.status !== "available")
+    .slice(0, 7)
+    .map(([dimension, status]) => ({ statement: status.explanation + " 数据截至" + (status.dataAsOf ?? "未知") + "。", dimension }));
+  return {
+    summary,
+    summaryEvidenceIds: keyEvidence.slice(0, 5).map((item) => item.id),
+    observations,
+    counterpoints: [],
+    uncertainties,
+    reevaluationConditionIds: snapshot.switchConditions.slice(0, 10).map((condition) => condition.metricId),
+    evidenceCoverage: getEvidenceCoverage(snapshot),
+  };
 }

@@ -21,7 +21,7 @@ export function assessResearchConfidence(snapshot: ResearchSnapshot, hasValidate
     return { level: "not_assessed", label: "未评估", reason: "合成演示数据不用于真实市场研判的置信度评估。" };
   }
   if (!hasValidatedReport) {
-    return { level: "not_assessed", label: "未评估", reason: "本轮没有通过校验的 AI 最终结论，仅保留事实和数据质量状态。" };
+    return { level: "not_assessed", label: "未评估", reason: "本轮没有生成可展示的最终结论，仅保留事实和数据质量状态。" };
   }
 
   const required = requiredDimensions[snapshot.scope.focus];
@@ -45,5 +45,5 @@ export function assessResearchConfidence(snapshot: ResearchSnapshot, hasValidate
     return { level: "medium", label: "中", reason: `${reasons.join("；")}；结论强度有限。` };
   }
 
-  return { level: "high", label: "高", reason: "研究所需维度齐备、时点一致，且有多类证据支持 AI 最终结论。" };
+  return { level: "high", label: "高", reason: "研究所需维度齐备、时点一致，且有多类证据支持本轮报告结论。" };
 }

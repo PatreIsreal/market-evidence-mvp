@@ -85,6 +85,7 @@ describe("structured AI report", () => {
     expect(requestUrl).toBe("https://model.example/v1/chat/completions");
     expect(authorization).toBe("Bearer test-secret");
     expect(report.modelName).toBe("test-model");
+    expect(report.generationMode).toBe("model");
     expect(report.evidenceCoverage).toBe(100);
     expect(report.observations[0]?.evidenceIds).toEqual(["E001"]);
     expect(thinkingMode).toEqual({ type: "disabled" });
@@ -108,20 +109,23 @@ describe("structured AI report", () => {
     expect(report.summaryEvidenceIds).toEqual(evidenceIds);
   });
 
-  it("rejects unknown evidence references", async () => {
+  it("retries a report with unknown evidence references and still returns a conclusion", async () => {
     const fetcher: typeof fetch = async () => Response.json({
       choices: [{ message: { content: JSON.stringify(modelResponse({
         observations: [{ statement: "这条说明引用了本轮没有的证据编号。", evidenceIds: ["E999"] }],
       })) } }],
     });
-    await expect(createAiReport(input, liveSnapshot(), {
+    const report = await createAiReport(input, liveSnapshot(), {
       MODEL_BASE_URL: "https://model.example/v1",
       MODEL_API_KEY: "test-secret",
       MODEL_NAME: "test-model",
-    }, { fetcher })).rejects.toMatchObject({ code: "REPORT_VALIDATION_FAILED" });
+    }, { fetcher });
+    expect(report.generationMode).toBe("recovered");
+    expect(report.summary).toContain("所选证据可以描述");
+    expect(report.observations.length).toBeGreaterThan(0);
   });
 
-  it("rejects numerical claims that the cited evidence cannot support", async () => {
+  it("falls back to a rule conclusion when the model repeats unsupported numerical claims", async () => {
     const snapshot = liveSnapshot();
     const fetcher: typeof fetch = async () => Response.json({
       choices: [{ message: { content: JSON.stringify(modelResponse({
@@ -129,11 +133,14 @@ describe("structured AI report", () => {
         summaryEvidenceIds: [snapshot.evidence[0]!.id],
       })) } }],
     });
-    await expect(createAiReport(input, snapshot, {
+    const report = await createAiReport(input, snapshot, {
       MODEL_BASE_URL: "https://model.example/v1",
       MODEL_API_KEY: "test-key",
       MODEL_NAME: "test-model",
-    }, { fetcher })).rejects.toMatchObject({ code: "REPORT_VALIDATION_FAILED" });
+    }, { fetcher });
+    expect(report.generationMode).toBe("rule_fallback");
+    expect(report.summary).toContain("市场状态");
+    expect(report.summaryEvidenceIds.length).toBeGreaterThan(0);
   });
 
   it("accepts the requested lookback length but still rejects unsupported period numbers", async () => {
@@ -157,8 +164,8 @@ describe("structured AI report", () => {
         summary: "本轮覆盖777个交易日，具体日历区间见研究范围。",
       })) } }],
     });
-    await expect(createAiReport(input, snapshot, source, { fetcher: unsupported }))
-      .rejects.toMatchObject({ code: "REPORT_VALIDATION_FAILED" });
+    const unsupportedReport = await createAiReport(input, snapshot, source, { fetcher: unsupported });
+    expect(unsupportedReport.generationMode).toBe("rule_fallback");
   });
 
   it("accepts a rounded numerical claim supported by its cited evidence", async () => {
@@ -203,7 +210,7 @@ describe("structured AI report", () => {
     expect(report.summary).toContain("低 3.63 个百分点");
   });
 
-  it("surfaces malformed JSON and model network timeouts with stable error codes", async () => {
+  it("keeps a report conclusion when the model returns malformed JSON or a network error", async () => {
     const source = {
       MODEL_BASE_URL: "https://model.example/v1",
       MODEL_API_KEY: "test-key",
@@ -212,10 +219,12 @@ describe("structured AI report", () => {
     const malformed: typeof fetch = async () => Response.json({ choices: [{ message: { content: "{broken" } }] });
     const timeout: typeof fetch = async () => { throw new Error("network timeout"); };
 
-    await expect(createAiReport(input, liveSnapshot(), source, { fetcher: malformed }))
-      .rejects.toMatchObject({ code: "MODEL_INVALID_RESPONSE" });
-    await expect(createAiReport(input, liveSnapshot(), source, { fetcher: timeout }))
-      .rejects.toMatchObject({ code: "MODEL_NETWORK_ERROR" });
+    const malformedReport = await createAiReport(input, liveSnapshot(), source, { fetcher: malformed });
+    const timeoutReport = await createAiReport(input, liveSnapshot(), source, { fetcher: timeout });
+    expect(malformedReport.generationMode).toBe("rule_fallback");
+    expect(timeoutReport.generationMode).toBe("rule_fallback");
+    expect(malformedReport.summary.length).toBeGreaterThan(12);
+    expect(timeoutReport.summary.length).toBeGreaterThan(12);
   });
 
   it("rejects trading advice even when the model returns valid JSON", async () => {
@@ -224,10 +233,12 @@ describe("structured AI report", () => {
         summary: "根据当前数据，明天一定涨并且可以满仓。",
       })) } }],
     });
-    await expect(createAiReport(input, liveSnapshot(), {
+    const report = await createAiReport(input, liveSnapshot(), {
       MODEL_BASE_URL: "https://model.example/v1",
       MODEL_API_KEY: "test-secret",
       MODEL_NAME: "test-model",
-    }, { fetcher })).rejects.toMatchObject({ code: "REPORT_VALIDATION_FAILED" });
+    }, { fetcher });
+    expect(report.generationMode).toBe("rule_fallback");
+    expect(report.summary).not.toContain("明天一定涨");
   });
 });

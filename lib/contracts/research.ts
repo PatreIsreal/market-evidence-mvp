@@ -153,6 +153,8 @@ export type AiReport = {
   reevaluationConditionIds: string[];
   evidenceCoverage: number;
   modelName: string;
+  generationMode: "model" | "recovered" | "rule_fallback";
+  recoveryNote: string | null;
 };
 
 export type AiResearchPlan = {

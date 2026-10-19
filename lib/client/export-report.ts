@@ -31,7 +31,9 @@ export function snapshotToMarkdown(snapshot: ResearchSnapshot) {
   const reportContext = report
     ? snapshot.synthetic
       ? "> AI 最终结论基于本轮合成演示证据，仅用于演示。"
-      : `> AI 最终结论由 ${report.modelName} 基于本轮证据生成；请同时参考数据时点、口径与质量状态。`
+      : report.generationMode === "rule_fallback"
+        ? "> 规则兜底结论由服务端根据本轮已校验证据生成；" + (report.recoveryNote ?? "请同时参考数据时点、口径与质量状态。")
+        : "> 最终结论由 " + report.modelName + " 基于本轮证据生成；" + (report.recoveryNote ?? "请同时参考数据时点、口径与质量状态。")
     : snapshot.synthetic
       ? "> 本轮未生成 AI 最终结论；以下合成数据与代码计算仅用于演示。"
       : "> 本轮未生成 AI 最终结论；导出仅包含已计算指标、来源状态与证据索引。";
@@ -54,6 +56,7 @@ export function snapshotToMarkdown(snapshot: ResearchSnapshot) {
       "",
       "## AI 最终结论",
       "",
+      "- 生成方式：" + (report.generationMode === "model" ? "模型完整报告" : report.generationMode === "recovered" ? "模型修复结论" : "规则兜底"),
       `- 模型：${report.modelName}`,
       `- 七维证据覆盖：${report.evidenceCoverage}%（行情结构、市场宽度、风格、估值、流动性、情绪、事件；不代表涨跌概率）`,
       "",

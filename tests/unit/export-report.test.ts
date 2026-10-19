@@ -26,6 +26,8 @@ describe("Markdown research export", () => {
       reevaluationConditionIds: [],
       evidenceCoverage: 67,
       modelName: "test-model",
+      generationMode: "model",
+      recoveryNote: null,
     };
     snapshot.evidence.push({
       id: "E999",
@@ -46,7 +48,7 @@ describe("Markdown research export", () => {
     expect(markdown).toContain("## AI 最终结论");
     expect(markdown).toContain("证据：E001");
     expect(markdown).toContain("七维证据覆盖：67%");
-    expect(markdown).toContain("AI 最终结论由 test-model 基于本轮证据生成");
+    expect(markdown).toContain("最终结论由 test-model 基于本轮证据生成");
     expect(markdown).toContain("[原文](https://example.com/news/100)");
     expect(markdown).not.toContain("运行时 AI 未连接");
   });
