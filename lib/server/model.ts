@@ -373,10 +373,12 @@ function buildFallbackParts(snapshot: ResearchSnapshot, input: ResearchInput) {
     }).slice(0, 5);
   const summaryEvidence = [
     ...usableEvidence.filter((item) => item.dimension === "price" && /20 日区间收益|区间最大回撤/.test(item.label)),
-    ...["breadth", "style", "liquidity", "sentiment", "events"].flatMap((dimension) => {
-      const item = usableEvidence.find((entry) => entry.dimension === dimension);
-      return item ? [item] : [];
-    }),
+    ...usableEvidence.filter((item) =>
+      (item.dimension === "breadth" && /上涨比例/.test(item.label))
+      || (item.dimension === "style" && /收益差/.test(item.label))
+      || (item.dimension === "liquidity" && /成交额相对/.test(item.label))
+      || (item.dimension === "sentiment" && /涨停封板率|最高连板高度/.test(item.label))
+      || (item.dimension === "events" && item.kind === "source_excerpt")),
   ].slice(0, 10);
   const tag = snapshot.stateTags.find((item) => item.evidenceIds.some((id) => usableEvidence.some((entry) => entry.id === id)));
   const hasCoreData = snapshot.metrics.return20 !== null || snapshot.metrics.breadthLatest !== null;

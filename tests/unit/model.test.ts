@@ -110,12 +110,23 @@ describe("structured AI report", () => {
   });
 
   it("retries a report with unknown evidence references and still returns a conclusion", async () => {
+    const snapshot = liveSnapshot();
+    snapshot.evidence.push({
+      id: "E900", dimension: "sentiment", label: "涨停封板率", kind: "derived_metric", value: 69.7, unit: "%",
+      period: { start: "2026-10-16", end: "2026-10-16" }, dataAsOf: "2026-10-16", status: "available",
+      scopeDescription: "测试情绪指标", sourceRefs: [{ datasetId: "test.sentiment", recordKeys: ["2026-10-16"], fields: ["seal_rate"] }], issues: [],
+    });
+    snapshot.evidence.push({
+      id: "E901", dimension: "events", label: "近时段资讯候选", kind: "source_excerpt", value: "未核验资讯", unit: "来源摘要",
+      period: { start: "2026-10-16", end: "2026-10-16" }, dataAsOf: "2026-10-16", status: "available",
+      scopeDescription: "待核验候选", sourceRefs: [{ datasetId: "test.events", recordKeys: ["1"], fields: ["title"] }], issues: ["未核验"],
+    });
     const fetcher: typeof fetch = async () => Response.json({
       choices: [{ message: { content: JSON.stringify(modelResponse({
         observations: [{ statement: "这条说明引用了本轮没有的证据编号。", evidenceIds: ["E999"] }],
       })) } }],
     });
-    const report = await createAiReport(input, liveSnapshot(), {
+    const report = await createAiReport(input, snapshot, {
       MODEL_BASE_URL: "https://model.example/v1",
       MODEL_API_KEY: "test-secret",
       MODEL_NAME: "test-model",
@@ -124,6 +135,9 @@ describe("structured AI report", () => {
     expect(report.summary).toContain("所选证据可以描述");
     expect(report.observations.length).toBeGreaterThan(0);
     expect(report.summaryEvidenceIds).toContain("E003");
+    expect(report.summaryEvidenceIds).toContain("E900");
+    expect(report.summaryEvidenceIds).toContain("E901");
+    expect(report.observations.some((item) => item.statement.includes("资讯候选"))).toBe(true);
   });
 
   it("falls back to a rule conclusion when the model repeats unsupported numerical claims", async () => {
