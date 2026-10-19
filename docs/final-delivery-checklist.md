@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 可访问、可实际操作的 Web 产品 | [市场证据台公开版](https://market-evidence-desk-20261018.minty-genet-8078.chatgpt.site/) | Sites v13 可匿名访问并发起实时研究；公开端到端测试已通过 |
 | 源代码仓库与 README | [GitHub 仓库](https://github.com/PatreIsreal/market-evidence-mvp)；仓库根目录 `README.md` | 公开仓库包含应用源码、测试、环境变量模板、启动方式和项目文档 |
-| 使用方法 | [使用指南](使用指南.md) | 包含在线研究步骤、结果阅读与证据追溯、导出、环境配置和本地启动 |
+| 使用方法 | 仓库一级目录 [使用指南](../使用指南.md) | 包含在线研究步骤、结果阅读与证据追溯、导出、环境配置和本地启动 |
 | AI 使用与验证记录 | [AI 使用与验证记录](ai-usage-and-validation.md) | 记录 Codex、DeepSeek 的参与环节、人工修正和真实运行验证；不记录凭据 |
 | 测试说明 | [测试说明](testing.md)；[公开端到端测试记录](e2e-test-2026-10-19.md) | 覆盖实时主链路、接口和数据异常、极端输入、证据追溯及合规边界 |
 
