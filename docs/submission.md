@@ -22,6 +22,7 @@
 
 ## 验收材料
 
+- [最终交付清单](final-delivery-checklist.md)
 - [原始需求](source-requirements.md)
 - [完整开发执行计划](development-plan.md)
 - [项目现状与迭代路线图（压缩版）](项目现状与迭代路线图.md)
