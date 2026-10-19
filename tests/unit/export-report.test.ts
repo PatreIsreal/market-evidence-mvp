@@ -27,12 +27,27 @@ describe("Markdown research export", () => {
       evidenceCoverage: 67,
       modelName: "test-model",
     };
+    snapshot.evidence.push({
+      id: "E999",
+      dimension: "events",
+      label: "快讯候选",
+      kind: "source_excerpt",
+      value: "这是测试摘要。",
+      unit: "来源摘要",
+      period: { start: "2026-10-19", end: "2026-10-19" },
+      dataAsOf: "2026-10-19 16:00:00",
+      status: "available",
+      scopeDescription: "A 股快讯候选。",
+      sourceRefs: [{ datasetId: "fuyao.news.flash", recordKeys: ["100"], fields: ["title", "summary"], sourceUrl: "https://example.com/news/100" }],
+      issues: ["未核验"],
+    });
 
     const markdown = snapshotToMarkdown(snapshot);
     expect(markdown).toContain("## AI 最终结论");
     expect(markdown).toContain("证据：E001");
-    expect(markdown).toContain("核心证据覆盖：67%");
+    expect(markdown).toContain("七维证据覆盖：67%");
     expect(markdown).toContain("AI 最终结论由 test-model 基于本轮证据生成");
+    expect(markdown).toContain("[原文](https://example.com/news/100)");
     expect(markdown).not.toContain("运行时 AI 未连接");
   });
 

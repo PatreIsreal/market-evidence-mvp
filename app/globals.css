@@ -269,6 +269,7 @@ button:disabled { cursor: wait; opacity: .68; }
 .dialog-header h2 { margin: 6px 0 0; color: #2f4358; font-size: 15px; font-weight: 660; }
 .dialog-value { margin: 20px 0; color: #385d7e; font-size: 30px; font-weight: 670; letter-spacing: -.04em; }
 .dialog-value small { color: #8090a0; font-size: 11px; font-weight: 500; }
+.dialog-excerpt { margin: 0; color: #385d7e; font-size: 14px; font-weight: 450; letter-spacing: 0; line-height: 1.8; white-space: pre-wrap; }
 .trace-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 11px; padding: 14px 0; border-top: 1px solid #edf0f3; border-bottom: 1px solid #edf0f3; }
 .trace-item span, .trace-item strong { display: block; }
 .trace-item span { color: #99a3ae; font-size: 8px; }

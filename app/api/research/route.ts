@@ -106,7 +106,7 @@ export async function POST(request: Request) {
           return;
         }
 
-        let dimensions: Array<"price" | "breadth" | "style"> = ["price", "breadth", "style"];
+        let dimensions: Array<"price" | "breadth" | "style" | "sentiment" | "events"> = ["price", "breadth", "style", "sentiment", "events"];
         let aiPlanSucceeded = false;
         let analysisAngle: string = input.scope.focus;
         if (config.modelConfigured) {
@@ -122,7 +122,7 @@ export async function POST(request: Request) {
             emit("tool_finished", { callId: "model-plan", status: "failed", mode: "live" });
             emit("warning", {
               code: modelError?.code ?? "PLAN_FAILED",
-              message: (modelError?.message ?? "模型计划未通过校验。") + " 本轮继续使用代码默认的行情、宽度和风格计划。",
+              message: (modelError?.message ?? "模型计划未通过校验。") + " 本轮继续使用代码默认的行情、宽度、风格、情绪和事件候选计划。",
               affectedDimensions: [],
             });
           }
@@ -136,6 +136,8 @@ export async function POST(request: Request) {
           { callId: "index-primary", toolName: "get_a_share_index_prices_historical", purpose: "读取主观察指数历史日线", status: "planned" },
           ...comparisons.map((_, index) => ({ callId: "index-comparison-" + (index + 1), toolName: "get_a_share_index_prices_historical", purpose: "读取同期对比指数日线", status: "planned" })),
           ...(dimensions.includes("breadth") ? [{ callId: "market-snapshot-1", toolName: "get_a_share_prices_snapshot", purpose: "读取最近已完成交易日对应的全市场快照（收盘确认后）计算市场宽度", status: "planned" }] : []),
+          ...(dimensions.includes("sentiment") ? [{ callId: "sentiment-statistics", toolName: "get_a_share_special_data_limit_up_statistics", purpose: "读取与研究收盘日对齐的涨停封板率、打开家数与连板高度", status: "planned" }] : []),
+          ...(dimensions.includes("events") ? [{ callId: "news-flash", toolName: "get_a_share_news_flash_list", purpose: "读取近 72 小时 A 股快讯候选（不等同于已核实重大事件）", status: "planned" }] : []),
           ...(config.modelConfigured ? [{ callId: "model-report", toolName: "runtime_model", purpose: "生成有证据引用的归纳与反证", status: "planned" }] : []),
         ];
         emit("plan", {

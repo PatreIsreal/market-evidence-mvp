@@ -59,6 +59,35 @@ const snapshotSchema = z.object({
   })),
 });
 
+const limitUpStatisticsSchema = z.object({
+  timestamp: z.number().nullable().optional(),
+  trade_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  seal_rate: z.number().nullable().optional(),
+  open_stock_count: z.number().int().nonnegative(),
+  limit_up_stock_count: z.number().int().nonnegative(),
+  touched_limit_up_stock_count: z.number().int().nonnegative().optional(),
+  exact_boards: z.array(z.object({
+    board_num: z.number().int().positive(),
+    stock_count: z.number().int().nonnegative(),
+  })).optional().default([]),
+});
+
+const newsFlashSchema = z.object({
+  timestamp: z.number().nullable().optional(),
+  items: z.array(z.object({
+    id: z.string(),
+    seq: z.string().optional(),
+    title: z.string().trim().min(1),
+    summary: z.string().nullable().optional(),
+    encoded_url: z.string().nullable().optional(),
+    tags: z.array(z.object({ id: z.number().optional(), name: z.string() })).default([]),
+    type: z.number().optional(),
+    create_time_ms: z.number(),
+    update_time_ms: z.number().nullable().optional(),
+    pic_url: z.string().nullable().optional(),
+  })),
+});
+
 type EventEmitter = (type: string, data: unknown) => void;
 type Fetcher = typeof fetch;
 type ApiResult<T> = { data: T; requestId: string | null; path: string };
@@ -329,6 +358,47 @@ function addEvidence(
   return id;
 }
 
+function addEventEvidence(evidence: Evidence[], args: {
+  title: string;
+  summary: string;
+  createdAt: number;
+  id: string;
+  tags: string[];
+  articleUrl: string | null;
+}) {
+  const date = formatShanghaiDate(args.createdAt);
+  evidence.push({
+    id: `E${String(evidence.length + 1).padStart(3, "0")}`,
+    dimension: "events",
+    label: args.title,
+    kind: "source_excerpt",
+    value: args.summary,
+    unit: "来源摘要",
+    period: { start: date, end: date },
+    dataAsOf: formatShanghaiDateTime(args.createdAt),
+    status: "available",
+    scopeDescription: `扶摇快讯 A 股标签候选；标签：${args.tags.join("、") || "A股"}。快讯发布时间字段为 create_time_ms，不等于事件发生或生效时间。`,
+    sourceRefs: [{
+      datasetId: "fuyao.news.flash",
+      recordKeys: [args.id],
+      fields: ["title", "summary", "tags", "create_time_ms", "encoded_url"],
+      ...(args.articleUrl ? { sourceUrl: args.articleUrl } : {}),
+    }],
+    derivation: { formulaId: "events.flashCandidate", formulaVersion: "mvp-v1", inputEvidenceIds: [], parameters: { note: "按 A 股标签、时间范围与去重规则筛选快讯候选；未由规则认定其为重大事件" } },
+    issues: ["这是资讯候选摘要，不是事件事实核验或影响因果结论。请查看原文并结合其他来源核实。"],
+  });
+}
+
+function safeHttpsUrl(value: string | null | undefined) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 function currentBreadthFromSnapshot(items: Array<z.infer<typeof snapshotSchema>["item"][number]>) {
   let upCount = 0;
   let downCount = 0;
@@ -348,7 +418,7 @@ export async function createFuyaoSnapshot(
   input: ResearchInput,
   source: Record<string, string | undefined>,
   emit: EventEmitter,
-  options: { fetcher?: Fetcher; now?: Date; signal?: AbortSignal; dimensions?: Array<"price" | "breadth" | "style"> } = {},
+  options: { fetcher?: Fetcher; now?: Date; signal?: AbortSignal; dimensions?: Array<"price" | "breadth" | "style" | "sentiment" | "events"> } = {},
 ): Promise<ResearchSnapshot> {
   const apiKey = source.FUYAO_API_KEY;
   if (!apiKey) throw new FuyaoProviderError("尚未配置扶摇 API Key。", "CONFIG_MISSING");
@@ -568,6 +638,136 @@ export async function createFuyaoSnapshot(
     }
   }
 
+  let sentimentStatus: ResearchSnapshot["dimensionStatuses"][Dimension] = requestedDimensions.includes("sentiment")
+    ? { status: "unavailable", explanation: "所选交易日没有请求到扶摇涨停强度统计。", dataAsOf: null }
+    : { status: "unavailable", explanation: "本轮 AI 研究计划未请求盘面情绪代理。", dataAsOf: null };
+  if (requestedDimensions.includes("sentiment")) {
+    const earliestSupportedDate = shiftCalendarDays(formatShanghaiDate(now), -365);
+    if (actualEnd < earliestSupportedDate) {
+      sentimentStatus = {
+        status: "unavailable",
+        explanation: "扶摇涨停强度统计仅支持近一年交易日；所选历史日期超出接口范围。",
+        dataAsOf: null,
+      };
+      emit("tool_finished", { callId: "sentiment-statistics", status: "unavailable", mode: "live" });
+    } else {
+      try {
+        const result = await callFuyao({
+          baseUrl,
+          apiKey,
+          path: "/api/a-share/special-data/limit-up-statistics",
+          params: { date: actualEnd },
+          callId: "sentiment-statistics",
+          purpose: `读取 ${actualEnd} 涨停强度、封板率与连板统计`,
+          schema: limitUpStatisticsSchema,
+          emit,
+          fetcher,
+          signal: options.signal,
+        });
+        const stats = result.data;
+        const timestampValid = typeof stats.timestamp === "number"
+          && stats.timestamp > 0
+          && stats.timestamp <= now.getTime() + 5 * 60_000;
+        if (stats.trade_date !== actualEnd || !timestampValid) {
+          sentimentStatus = {
+            status: "stale",
+            explanation: `扶摇返回的涨停统计交易日为 ${stats.trade_date}，统计采样时间为 ${stats.timestamp ? formatShanghaiDateTime(stats.timestamp) : "未知"}；与研究收盘日 ${actualEnd} 不一致或时点未通过校验。`,
+            dataAsOf: stats.trade_date,
+          };
+          emit("tool_finished", { callId: "sentiment-statistics", status: "stale", mode: "live" });
+        } else {
+          const sourceUrl = `${baseUrl.replace(/\/+$/, "")}/api/a-share/special-data/limit-up-statistics`;
+          const explanation = `扶摇涨停强度与晋级统计；业务交易日 ${stats.trade_date} 与指数实际收盘日一致。封板率沿用供应商口径，不代表完整投资者情绪。`;
+          addEvidence(evidence, "sentiment", "涨停封板家数", stats.limit_up_stock_count, "家", [actualEnd], "sentiment.limitUpCount", "使用供应商返回的 limit_up_stock_count", ["limit_up_stock_count"], "fuyao.limit_up.statistics", explanation, sourceUrl);
+          addEvidence(evidence, "sentiment", "涨停打开家数", stats.open_stock_count, "家", [actualEnd], "sentiment.openCount", "使用供应商返回的 open_stock_count", ["open_stock_count"], "fuyao.limit_up.statistics", explanation, sourceUrl);
+          if (stats.seal_rate !== null && stats.seal_rate !== undefined) {
+            addEvidence(evidence, "sentiment", "涨停封板率", stats.seal_rate * 100, "%", [actualEnd], "sentiment.sealRate", "供应商 seal_rate × 100；原值为小数比例", ["seal_rate", "touched_limit_up_stock_count"], "fuyao.limit_up.statistics", explanation, sourceUrl);
+          }
+          const highestBoard = (stats.exact_boards ?? []).filter((board) => board.stock_count > 0).reduce((highest, board) => Math.max(highest, board.board_num), 0);
+          if (highestBoard > 0) {
+            addEvidence(evidence, "sentiment", "最高连板高度", highestBoard, "板", [actualEnd], "sentiment.highestBoard", "取 exact_boards 中 stock_count > 0 的最大 board_num", ["exact_boards.board_num", "exact_boards.stock_count"], "fuyao.limit_up.statistics", explanation, sourceUrl);
+          }
+          sentimentStatus = { status: "available", explanation, dataAsOf: actualEnd };
+        }
+      } catch (error) {
+        sentimentStatus = {
+          status: "failed",
+          explanation: error instanceof Error ? error.message : "扶摇涨停统计调用失败。",
+          dataAsOf: null,
+        };
+      }
+    }
+  }
+
+  let eventsStatus: ResearchSnapshot["dimensionStatuses"][Dimension] = requestedDimensions.includes("events")
+    ? { status: "unavailable", explanation: "尚未请求扶摇 A 股快讯候选。", dataAsOf: null }
+    : { status: "unavailable", explanation: "本轮 AI 研究计划未请求事件候选。", dataAsOf: null };
+  if (requestedDimensions.includes("events")) {
+    if (!latestCompleted || actualEnd !== latestCompleted) {
+      eventsStatus = {
+        status: "unavailable",
+        explanation: "当前快讯列表只用于最近已完成交易日的研究；历史研究不使用今天的新闻回填。",
+        dataAsOf: null,
+      };
+      emit("tool_finished", { callId: "news-flash", status: "unavailable", mode: "live" });
+    } else {
+      try {
+        const result = await callFuyao({
+          baseUrl,
+          apiKey,
+          path: "/api/news/flash/list",
+          params: { tag_id: 21103, seq: 0 },
+          callId: "news-flash",
+          purpose: "读取近期带 A 股标签的快讯，作为待核验事件候选",
+          schema: newsFlashSchema,
+          emit,
+          fetcher,
+          signal: options.signal,
+        });
+        const cutoff = now.getTime() - 72 * 60 * 60 * 1000;
+        const unique = new Map<string, typeof result.data.items[number]>();
+        for (const item of result.data.items) {
+          const titleKey = item.title.replace(/\s+/g, "").toLowerCase();
+          const tags = item.tags ?? [];
+          const isAshare = tags.some((tag) => tag.name.includes("A股"));
+          if (!isAshare || item.create_time_ms < cutoff || item.create_time_ms > now.getTime() + 5 * 60_000 || !titleKey) continue;
+          const previous = unique.get(titleKey);
+          if (!previous || item.create_time_ms > previous.create_time_ms) unique.set(titleKey, item);
+        }
+        const candidates = [...unique.values()].sort((left, right) => right.create_time_ms - left.create_time_ms).slice(0, 10);
+        for (const item of candidates) {
+          const summary = (item.summary?.trim() || item.title).slice(0, 700);
+          addEventEvidence(evidence, {
+            title: item.title.slice(0, 180),
+            summary,
+            createdAt: item.create_time_ms,
+            id: item.id,
+            tags: (item.tags ?? []).map((tag) => tag.name),
+            articleUrl: safeHttpsUrl(item.encoded_url),
+          });
+        }
+        const newest = candidates[0]?.create_time_ms;
+        eventsStatus = candidates.length
+          ? {
+            status: "available",
+            explanation: `扶摇快讯列表返回 ${candidates.length} 条去重后的近 72 小时 A 股资讯候选。create_time_ms 是快讯创建时间，不代表事件发生时间；候选不等同于已核实的重大事件。`,
+            dataAsOf: newest ? formatShanghaiDate(newest) : null,
+          }
+          : {
+            status: "missing",
+            explanation: "扶摇快讯近 72 小时没有返回通过 A 股标签和时间校验的候选；这不代表市场没有重要事件。",
+            dataAsOf: null,
+          };
+      } catch (error) {
+        eventsStatus = {
+          status: "failed",
+          explanation: error instanceof Error ? error.message : "扶摇快讯候选调用失败。",
+          dataAsOf: null,
+        };
+      }
+    }
+  }
+
   const stateTags: ResearchSnapshot["stateTags"] = [];
   if (return20 !== null && ma20 !== null && primaryPoints.at(-1)!.close > ma20 && return20 > 0) {
     stateTags.push({ id: "price-structure-positive", label: "所选区间：价格高于 MA20 且 20 日收益为正", evidenceIds: [eReturn, eMa].filter((id): id is string => Boolean(id)) });
@@ -635,8 +835,8 @@ export async function createFuyaoSnapshot(
       liquidity: primaryPoints.some((point) => point.amountCny !== null)
         ? { status: "available", explanation: "使用指数日线成交额字段，单位为人民币元。", dataAsOf: primaryDataAsOf }
         : { status: "missing", explanation: "指数历史日线没有有效成交额字段。", dataAsOf: primaryDataAsOf },
-      sentiment: { status: "unavailable", explanation: "情绪接口尚未接入。", dataAsOf: null },
-      events: { status: "unavailable", explanation: "政策、新闻与公告事件接口尚未接入。", dataAsOf: null },
+      sentiment: sentimentStatus,
+      events: eventsStatus,
     },
     evidence,
     switchConditions: [{

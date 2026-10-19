@@ -157,7 +157,7 @@ export type AiReport = {
 
 export type AiResearchPlan = {
   analysisAngle: string;
-  dimensions: Array<"price" | "breadth" | "style">;
+  dimensions: Array<"price" | "breadth" | "style" | "sentiment" | "events">;
   modelName: string;
 };
 

@@ -5,6 +5,16 @@ function metric(value: number | null, unit = "") {
   return value === null ? "未计算" : `${Number(value.toFixed(6))}${unit}`;
 }
 
+function safeHttpsUrl(value?: string) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function snapshotToMarkdown(snapshot: ResearchSnapshot) {
   const dimensions: Dimension[] = ["price", "breadth", "style", "valuation", "liquidity", "sentiment", "events"];
   const metrics = [
@@ -45,7 +55,7 @@ export function snapshotToMarkdown(snapshot: ResearchSnapshot) {
       "## AI 最终结论",
       "",
       `- 模型：${report.modelName}`,
-      `- 核心证据覆盖：${report.evidenceCoverage}%（行情结构、市场宽度、风格；不代表涨跌概率）`,
+      `- 七维证据覆盖：${report.evidenceCoverage}%（行情结构、市场宽度、风格、估值、流动性、情绪、事件；不代表涨跌概率）`,
       "",
       report.summary,
       "",
@@ -70,7 +80,8 @@ export function snapshotToMarkdown(snapshot: ResearchSnapshot) {
     ...(snapshot.evidence.length ? snapshot.evidence.map((item) => {
       const value = typeof item.value === "number" ? metric(item.value, item.unit) : String(item.value ?? "无值");
       const formula = item.derivation?.parameters.note;
-      return `- **${item.id} ${item.label}**：${value}；${item.period.start} 至 ${item.period.end}；${item.scopeDescription}${formula ? `；计算：${formula}` : ""}${item.issues.length ? `；说明：${item.issues.join("；")}` : ""}`;
+      const sourceLink = item.dimension === "events" ? item.sourceRefs.map((ref) => safeHttpsUrl(ref.sourceUrl)).find(Boolean) : null;
+      return `- **${item.id} ${item.label}**：${value}；${item.period.start} 至 ${item.period.end}；${item.scopeDescription}${sourceLink ? `；[原文](${sourceLink})` : ""}${formula ? `；计算：${formula}` : ""}${item.issues.length ? `；说明：${item.issues.join("；")}` : ""}`;
     }) : ["- 当前没有可导出的证据条目。"]),
     "",
     "## 重新评估条件",

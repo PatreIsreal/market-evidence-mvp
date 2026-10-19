@@ -17,7 +17,7 @@ Vitest 使用独立的 `vitest.config.ts`，不加载 Sites 的 Cloudflare Worke
 
 | 检查 | 环境 | 结果 |
 | --- | --- | --- |
-| `npm test` | Node.js 25；合成数据与模拟扶摇／模型响应 | 8 个文件、43 项测试通过 |
+| `npm test` | Node.js 25；合成数据与模拟扶摇／模型响应 | 8 个文件、48 项测试通过；含快讯标签、72 小时、去重、HTTPS 原文和历史隔离测试 |
 | `npm run typecheck` | TypeScript | 通过 |
 | `npm run lint` | 本地源码 | 通过 |
 | `npm run build` | 本地 Vinext 生产构建 | 通过 |
@@ -34,6 +34,8 @@ Vitest 使用独立的 `vitest.config.ts`，不加载 Sites 的 Cloudflare Worke
 | 极值和冲突质量 | 合成指标输入 | 零分母、超安全整数的家数和溢出收益返回缺失；极大正数均值保持有限；样本口径冲突不计算宽度，必需维度冲突将置信度降为低 |
 | Docker 自托管部署后复测 | Ubuntu 24.04 自托管 VPN 服务 | 最新 release 容器 healthy，首页、health、capabilities 均 HTTP 200；服务器真实研究 POST 返回 30 条 NDJSON 事件、`done=complete`，模型计划、交易日历、指数历史、全市场快照及模型报告均成功 |
 | Sites 公开访问与研究流 | [公开体验站](https://market-evidence-desk-20261018.minty-genet-8078.chatgpt.site)，2026-10-19 匿名验证 | health 为 live 且扶摇／模型均已配置；真实研究流 20 交易日、as-of 2026-10-16，DeepSeek 报告通过证据校验，`done=complete`；快照宽度 stale，证据覆盖率 67% |
+| Sites v9 部署与公开研究流 | [公开体验站](https://market-evidence-desk-20261018.minty-genet-8078.chatgpt.site)，2026-10-19 | 发布版本 9 成功；公开研究 HTTP 200、行情截止 2026-10-19、情绪和事件状态 available、10 条事件候选进入证据且被 DeepSeek 反证引用，`done=complete`、无 warning，覆盖率 57% |
+| 本地更新后 live 研究流 | 本地 Wrangler 生产构建与已配置服务端运行时 | HTTP 200、`done=complete`；计划包括涨停统计与快讯，情绪状态 available，10 条事件候选进入证据；DeepSeek 报告生成且反证引用事件证据，覆盖率 57% |
 
 ## 已覆盖行为
 
@@ -48,7 +50,7 @@ Vitest 使用独立的 `vitest.config.ts`，不加载 Sites 的 Cloudflare Worke
 
 - 历史区间研究只提供指数历史日线，扶摇当前快照不能回填该历史阶段的逐日市场宽度；页面明确标记缺口，置信度随之降低。
 - 历史区间浏览器请求曾出现一次连接超时，随后重试成功；本轮本地 Playwright 多轮请求及最新服务器部署后的真实研究流均完成。
-- iFinD MCP 尚未连接；本机技能鉴权请求返回 HTTP 401。估值、情绪、重要事件维度继续显示明确未接入状态。
+- iFinD MCP 尚未连接；本机技能鉴权请求返回 HTTP 401。指数估值历史仍未接入；情绪与事件本轮只完成本地适配和单测，尚未在更新后的线上应用流中复测。
 - 双源相同指标产生冲突时的双方值展示尚未验证；当前只有扶摇数据源，须待第二个有效数据源接入后验收。
 - 扶摇数据在页面、导出中的账户授权范围以及评审外部访问条件尚未确认。
 - 公开站点目前没有登录或请求限流；访客研究会使用服务端配置的上游额度。

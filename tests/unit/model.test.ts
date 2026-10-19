@@ -13,12 +13,14 @@ const input = researchInputSchema.parse({
 });
 
 function liveSnapshot() {
-  return {
+  const snapshot = {
     ...createDemoSnapshot(input, "2026-10-18T02:00:00.000Z"),
     mode: "live" as const,
     synthetic: false,
     sourceLabel: "测试供应商样本",
   };
+  for (const status of Object.values(snapshot.dimensionStatuses)) status.status = "available";
+  return snapshot;
 }
 
 function modelResponse(overrides: Record<string, unknown> = {}) {
@@ -36,7 +38,7 @@ function modelResponse(overrides: Record<string, unknown> = {}) {
 describe("structured AI report", () => {
   it("lets the model choose supported research dimensions while code keeps price data mandatory", async () => {
     const fetcher: typeof fetch = async () => Response.json({
-      choices: [{ message: { content: JSON.stringify({ analysisAngle: "先核对价格结构，再检查市场参与情况。", dimensions: ["breadth"] }) } }],
+      choices: [{ message: { content: JSON.stringify({ analysisAngle: "先核对价格结构，再检查情绪与市场参与情况。", dimensions: ["breadth", "sentiment"] }) } }],
     });
     const plan = await createAiPlan(input, {
       MODEL_BASE_URL: "https://model.example/v1",
@@ -44,8 +46,8 @@ describe("structured AI report", () => {
       MODEL_NAME: "test-model",
     }, { fetcher });
 
-    expect(plan.dimensions).toEqual(["price", "breadth"]);
-    expect(plan.analysisAngle).toContain("参与情况");
+    expect(plan.dimensions).toEqual(["price", "events", "breadth", "sentiment"]);
+    expect(plan.analysisAngle).toContain("情绪");
   });
 
   it("keeps synthetic demo evidence out of the model", async () => {

@@ -63,6 +63,16 @@ function formatPercent(value: number | null | undefined) {
   return value === null || value === undefined || !Number.isFinite(value) ? "—" : `${formatNumber(value * 100)}%`;
 }
 
+function safeExternalLink(value?: string) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 function metricDate(value?: string | null) {
   if (!value) return "等待真实数据";
   return new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "long", day: "numeric" }).format(new Date(`${value}T12:00:00+08:00`));
@@ -103,8 +113,9 @@ function EvidenceCard({ evidence, onSelect }: { evidence: Evidence; onSelect: (e
       <span className="min-w-0 flex-1 text-left">
         <span className="block truncate text-[13px] font-semibold text-slate-800">{evidence.label}</span>
         <span className="mt-1 block text-[11px] text-slate-500">{evidence.period.start} 至 {evidence.period.end} · {evidence.unit}</span>
+        {typeof evidence.value === "string" && <span className="mt-1 block truncate text-[11px] leading-5 text-slate-600">{evidence.value}</span>}
       </span>
-      <span className="evidence-value">{formatNumber(evidence.value as number)}{evidence.unit === "%" ? "%" : ""}</span>
+      <span className="evidence-value">{typeof evidence.value === "number" ? `${formatNumber(evidence.value)}${evidence.unit === "%" ? "%" : ""}` : "查看摘要"}</span>
       <ChevronRight size={15} className="text-slate-400" />
     </button>
   );
@@ -366,7 +377,7 @@ export function ResearchWorkspace() {
                   <div className="tag-list-heading">规则标签 <span>{snapshot.synthetic ? "来自合成序列" : "由服务端代码计算"}</span></div>
                   <div className="state-tag-list">{snapshot.stateTags.length ? snapshot.stateTags.map((tag) => <span className="state-tag" key={tag.id}><Activity size={13} />{tag.label}</span>) : <span className="empty-tag">{snapshot.synthetic ? "当前演示序列没有触发已配置标签。" : "本轮数据没有触发已配置规则标签。"}</span>}</div>
                   <div className="status-divider" />
-                  <div className="confidence-row"><span>核心证据覆盖</span><strong>{aiReport ? String(aiReport.evidenceCoverage) + "%" : "未计算"}</strong><small>按行情结构、市场宽度、风格三个维度的可用性计算；不代表涨跌概率。</small></div>
+                  <div className="confidence-row"><span>七维证据覆盖</span><strong>{aiReport ? String(aiReport.evidenceCoverage) + "%" : "未计算"}</strong><small>按行情、宽度、风格、估值、流动性、情绪、事件七个维度的可用性计算；不代表涨跌概率。</small></div>
                   {confidence && <div className="confidence-row"><span>结论证据强度</span><strong>{confidence.label}</strong><small>{confidence.reason}描述本轮证据对 AI 最终结论的支持程度，不代表未来涨跌概率。</small></div>}
                   <div className="study-boundary"><ShieldCheck size={15} /><span>{snapshot.synthetic ? "标签描述合成历史；不表示未来走势。" : "AI 仅归纳本轮证据；不预测涨跌或给出交易指令。"}</span></div>
                 </div>
@@ -401,7 +412,7 @@ export function ResearchWorkspace() {
         </main>
       </div>
 
-      {selectedEvidence && <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedEvidence(null); }}><section className="evidence-dialog" role="dialog" aria-modal="true" aria-labelledby="evidence-title"><div className="dialog-header"><div><span className="section-kicker">SOURCE TRACE / {selectedEvidence.id}</span><h2 id="evidence-title">{selectedEvidence.label}</h2></div><button className="icon-button" type="button" aria-label="关闭" onClick={() => setSelectedEvidence(null)}>×</button></div><div className="dialog-value">{formatNumber(selectedEvidence.value as number)}<small> {selectedEvidence.unit}</small></div><div className="trace-grid"><TraceItem label="数据来源" value={snapshot?.sourceLabel ?? "合成演示生成器"} /><TraceItem label="数据时点" value={selectedEvidence.dataAsOf ?? "未提供"} /><TraceItem label="统计区间" value={`${selectedEvidence.period.start} — ${selectedEvidence.period.end}`} /><TraceItem label="样本口径" value={selectedEvidence.scopeDescription} /><TraceItem label="原始字段" value={selectedEvidence.sourceRefs.map((ref) => ref.fields.join(", ")).join("；")} /><TraceItem label="计算方法" value={String(selectedEvidence.derivation?.parameters.note ?? "原始字段")} /></div><div className="dialog-notice"><TriangleAlert size={15} /><span>{selectedEvidence.issues.join(" ")}</span></div><button className="dialog-close-button" type="button" onClick={() => setSelectedEvidence(null)}>关闭证据详情</button></section></div>}
+      {selectedEvidence && <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedEvidence(null); }}><section className="evidence-dialog" role="dialog" aria-modal="true" aria-labelledby="evidence-title"><div className="dialog-header"><div><span className="section-kicker">SOURCE TRACE / {selectedEvidence.id}</span><h2 id="evidence-title">{selectedEvidence.label}</h2></div><button className="icon-button" type="button" aria-label="关闭" onClick={() => setSelectedEvidence(null)}>×</button></div><div className="dialog-value">{typeof selectedEvidence.value === "number" ? <>{formatNumber(selectedEvidence.value)}<small> {selectedEvidence.unit}</small></> : <p className="dialog-excerpt">{String(selectedEvidence.value ?? "暂无摘要")}</p>}</div><div className="trace-grid"><TraceItem label="数据来源" value={snapshot?.sourceLabel ?? "合成演示生成器"} /><TraceItem label="数据时点" value={selectedEvidence.dataAsOf ?? "未提供"} /><TraceItem label="统计区间" value={`${selectedEvidence.period.start} — ${selectedEvidence.period.end}`} /><TraceItem label="样本口径" value={selectedEvidence.scopeDescription} /><TraceItem label="原始字段" value={selectedEvidence.sourceRefs.map((ref) => ref.fields.join(", ")).join("；")} /><TraceItem label="计算方法" value={String(selectedEvidence.derivation?.parameters.note ?? "原始字段")} />{selectedEvidence.sourceRefs.map((ref) => safeExternalLink(ref.sourceUrl)).find(Boolean) && <div className="trace-item"><span>原文链接</span><strong><a href={selectedEvidence.sourceRefs.map((ref) => safeExternalLink(ref.sourceUrl)).find(Boolean)!} target="_blank" rel="noreferrer">打开来源 ↗</a></strong></div>}</div><div className="dialog-notice"><TriangleAlert size={15} /><span>{selectedEvidence.issues.join(" ")}</span></div><button className="dialog-close-button" type="button" onClick={() => setSelectedEvidence(null)}>关闭证据详情</button></section></div>}
     </div>
   );
 }
