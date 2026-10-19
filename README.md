@@ -61,6 +61,7 @@ MODEL_THINKING_MODE=disabled
 ## 文档
 
 - [最终交付清单](docs/final-delivery-checklist.md)
+- [使用指南：在线研究、结果解读、本地启动与部署](docs/使用指南.md)
 - [项目现状与迭代路线图（压缩版）](docs/项目现状与迭代路线图.md)
 - [原始需求](docs/source-requirements.md)
 - [完整开发执行计划](docs/development-plan.md)
