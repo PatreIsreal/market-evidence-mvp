@@ -11,6 +11,7 @@
 | 2026-10-18 | Codex | 重新连接并更新自托管 VPN 服务 | 将已验证代码同步到新 release，保留服务器共享运行时密钥，构建并启动同一 Compose 服务 | 容器 health 为 healthy；首页、health、capabilities 返回 HTTP 200；服务器真实研究流 HTTP 200，26 条事件，扶摇日历／指数／全市场快照与 DeepSeek 计划／报告成功，`done=complete` |
 | 2026-10-19 | Codex、DeepSeek `deepseek-flash` 与公开 Sites | 将站点切换为 live 配置并匿名测试研究流 | 首次公开研究暴露“回看窗口长度”被误当成无证据数字；将请求范围长度和实际日期纳入数值校验上下文，并要求模型只报告可追溯数值 | 修正后 43 项测试、类型检查、lint、生产构建通过；公开匿名研究的扶摇计划／行情／DeepSeek 报告成功，`done=complete`；本次全市场快照 stale，报告保留市场宽度缺口 |
 | 2026-10-19 | Codex、扶摇 live API 与 DeepSeek `deepseek-flash` | 接入涨停统计、A 股快讯候选、证据详情和事件边界提示，并发布 Sites v9 | 仅使用真实日期对齐的涨停统计；新闻按标签、72 小时、重复标题筛选，禁止历史回填；明示资讯候选不等于重大事件核验 | 48 项单测、类型检查、lint、生产构建均通过；公开 live 流 HTTP 200、`done=complete`、无 warning，获取 10 条事件候选且报告反证引用事件，覆盖率 57%；Sites v9 部署成功 |
+| 2026-10-19 | Codex 与公开 Sites、DeepSeek `deepseek-flash` | 按提交要求通过 Playwright 对公开 Web 做两次端到端研究，第二次简化问题复测 | 确认这次测试不是历史回填；如实将连续两次报告结构校验失败记录为未通过，未用保留的规则数据冒充 AI 结论 | 页面、AI 计划、扶摇数据取数、21 条证据、近期 10 条事件候选和状态复核条件均显示成功；两次 DeepSeek 报告均未通过结构校验，AI 最终结论和结论证据强度未生成。见 [端到端测试记录](e2e-test-2026-10-19.md) |
 
 ## 产品运行时 AI
 
