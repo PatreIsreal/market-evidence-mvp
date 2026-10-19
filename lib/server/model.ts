@@ -149,6 +149,7 @@ function buildPrompt(input: ResearchInput, snapshot: ResearchSnapshot) {
     userQuestion: input.question,
     focus: input.scope.focus,
     index: snapshot.indexName,
+    requestedPeriod: snapshot.scope.period,
     actualPeriod: [snapshot.scope.actualStartDate, snapshot.scope.actualEndDate],
     source: snapshot.sourceLabel,
     evidence,
@@ -158,7 +159,7 @@ function buildPrompt(input: ResearchInput, snapshot: ResearchSnapshot) {
   });
 }
 
-function checkCitations(draft: z.infer<typeof draftSchema>, snapshot: ResearchSnapshot) {
+function checkCitations(draft: z.infer<typeof draftSchema>, snapshot: ResearchSnapshot, input: ResearchInput) {
   const evidenceIds = new Set(snapshot.evidence.map((item) => item.id));
   const conditionIds = new Set(snapshot.switchConditions.map((item) => item.metricId));
   const allStatements = [draft.summary, ...draft.observations.map((item) => item.statement), ...draft.counterpoints.map((item) => item.statement), ...draft.uncertainties.map((item) => item.statement)];
@@ -180,6 +181,14 @@ function checkCitations(draft: z.infer<typeof draftSchema>, snapshot: ResearchSn
     ...draft.observations.map((item) => ({ statement: item.statement, ids: item.evidenceIds })),
     ...draft.counterpoints.map((item) => ({ statement: item.statement, ids: item.evidenceIds })),
   ];
+  const scopeNumbers = numericTokens([
+    snapshot.scope.actualStartDate,
+    snapshot.scope.actualEndDate,
+    snapshot.scope.asOfDate ?? "",
+    input.scope.period.kind === "lookback"
+      ? String(input.scope.period.tradingDays)
+      : `${input.scope.period.startDate} ${input.scope.period.endDate}`,
+  ].join(" "));
   for (const claim of claims) {
     const supportingText = claim.ids.flatMap((id) => {
       const item = evidenceById.get(id);
@@ -191,7 +200,7 @@ function checkCitations(draft: z.infer<typeof draftSchema>, snapshot: ResearchSn
       ] : [];
     }).join(" ");
     const ruleNumbers = snapshot.switchConditions.flatMap((condition) => numericTokens(`${condition.threshold} ${condition.currentValue ?? ""}`));
-    const supportedNumbers = [...numericTokens(supportingText), ...ruleNumbers].flatMap((value) => {
+    const supportedNumbers = [...numericTokens(supportingText), ...scopeNumbers, ...ruleNumbers].flatMap((value) => {
       const variants = [value, Number(value.toFixed(1)), Number(value.toFixed(2)), Math.round(value)];
       return [...variants, ...variants.map(Math.abs)];
     });
@@ -249,7 +258,7 @@ export async function createAiReport(
         messages: [
           {
             role: "system",
-            content: "你是面向 A 股市场状态研究的证据归纳助手。只描述已给出的事实，不预测未来涨跌、不估计涨跌概率、不提出买卖、仓位或收益建议。只能使用给定的证据 ID；summary 必须带 1 到 10 个 summaryEvidenceIds，且每条 observation 和 counterpoint 必须带 1 到 5 个本轮证据 ID。区分事实、解释和不确定性。若数据是合成演示，拒绝将其解释为真实市场事实。只返回符合要求的 JSON 对象，字段为 summary、summaryEvidenceIds、observations[{statement,evidenceIds}]、counterpoints[{statement,evidenceIds}]、uncertainties[{statement,dimension}]、reevaluationConditionIds。每个 uncertainties.dimension 必须逐字使用以下一个值：price、breadth、style、valuation、liquidity、sentiment、events；不要翻译或自造维度值。所有陈述使用简体中文。",
+            content: "你是面向 A 股市场状态研究的证据归纳助手。只描述已给出的事实，不预测未来涨跌、不估计涨跌概率、不提出买卖、仓位或收益建议。只能使用给定的证据 ID；summary 必须带 1 到 10 个 summaryEvidenceIds，且每条 observation 和 counterpoint 必须带 1 到 5 个本轮证据 ID。区分事实、解释和不确定性。若数据是合成演示，拒绝将其解释为真实市场事实。所有数字、日期和比例必须能从直接引用的证据或 requestedPeriod、actualPeriod 中逐项核对；没有明确支持就改用定性表述。不要为了显得具体而补充任何数值。只返回符合要求的 JSON 对象，字段为 summary、summaryEvidenceIds、observations[{statement,evidenceIds}]、counterpoints[{statement,evidenceIds}]、uncertainties[{statement,dimension}]、reevaluationConditionIds。每个 uncertainties.dimension 必须逐字使用以下一个值：price、breadth、style、valuation、liquidity、sentiment、events；不要翻译或自造维度值。所有陈述使用简体中文。",
           },
           {
             role: "user",
@@ -281,7 +290,7 @@ export async function createAiReport(
   }
   const parsed = draftSchema.safeParse(rawDraft);
   if (!parsed.success) throw new ModelProviderError("模型输出未通过报告结构校验；已保留本轮数据与规则结果。", "REPORT_VALIDATION_FAILED");
-  checkCitations(parsed.data, snapshot);
+  checkCitations(parsed.data, snapshot, input);
 
   const coreDimensions: Dimension[] = ["price", "breadth", "style"];
   const evidenceCoverage = Math.round(coreDimensions.filter((dimension) => snapshot.dimensionStatuses[dimension].status === "available").length / coreDimensions.length * 100);

@@ -129,6 +129,31 @@ describe("structured AI report", () => {
     }, { fetcher })).rejects.toMatchObject({ code: "REPORT_VALIDATION_FAILED" });
   });
 
+  it("accepts the requested lookback length but still rejects unsupported period numbers", async () => {
+    const snapshot = liveSnapshot();
+    const source = {
+      MODEL_BASE_URL: "https://model.example/v1",
+      MODEL_API_KEY: "test-key",
+      MODEL_NAME: "test-model",
+    };
+    const supported: typeof fetch = async () => Response.json({
+      choices: [{ message: { content: JSON.stringify(modelResponse({
+        summary: "本轮覆盖60个交易日，具体日历区间见研究范围。",
+      })) } }],
+    });
+    await expect(createAiReport(input, snapshot, source, { fetcher: supported })).resolves.toMatchObject({
+      summary: "本轮覆盖60个交易日，具体日历区间见研究范围。",
+    });
+
+    const unsupported: typeof fetch = async () => Response.json({
+      choices: [{ message: { content: JSON.stringify(modelResponse({
+        summary: "本轮覆盖777个交易日，具体日历区间见研究范围。",
+      })) } }],
+    });
+    await expect(createAiReport(input, snapshot, source, { fetcher: unsupported }))
+      .rejects.toMatchObject({ code: "REPORT_VALIDATION_FAILED" });
+  });
+
   it("accepts a rounded numerical claim supported by its cited evidence", async () => {
     const snapshot = liveSnapshot();
     const evidence = snapshot.evidence.find((item) => typeof item.value === "number")!;
