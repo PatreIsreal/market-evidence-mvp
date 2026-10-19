@@ -17,7 +17,7 @@ Vitest 使用独立的 `vitest.config.ts`，不加载 Sites 的 Cloudflare Worke
 
 | 检查 | 环境 | 结果 |
 | --- | --- | --- |
-| `npm test` | Node.js 25；合成数据与模拟扶摇／模型响应 | 8 个文件、42 项测试通过 |
+| `npm test` | Node.js 25；合成数据与模拟扶摇／模型响应 | 8 个文件、43 项测试通过 |
 | `npm run typecheck` | TypeScript | 通过 |
 | `npm run lint` | 本地源码 | 通过 |
 | `npm run build` | 本地 Vinext 生产构建 | 通过 |
@@ -33,7 +33,7 @@ Vitest 使用独立的 `vitest.config.ts`，不加载 Sites 的 Cloudflare Worke
 | 模型输出质量 | 模拟模型 HTTP 响应 | 未知证据引用和引用证据不支持的数值被拒绝；合法舍入数值通过；坏 JSON、网络超时、越界建议分别返回明确错误 |
 | 极值和冲突质量 | 合成指标输入 | 零分母、超安全整数的家数和溢出收益返回缺失；极大正数均值保持有限；样本口径冲突不计算宽度，必需维度冲突将置信度降为低 |
 | Docker 自托管部署后复测 | Ubuntu 24.04 自托管 VPN 服务 | 最新 release 容器 healthy，首页、health、capabilities 均 HTTP 200；服务器真实研究 POST 返回 30 条 NDJSON 事件、`done=complete`，模型计划、交易日历、指数历史、全市场快照及模型报告均成功 |
-| Sites 公开访问与研究流 | [公开体验站](https://market-evidence-desk-20261018.minty-genet-8078.chatgpt.site)，发布后验证 | 发布完成后补入匿名访问、live health 和一条真实研究流结果 |
+| Sites 公开访问与研究流 | [公开体验站](https://market-evidence-desk-20261018.minty-genet-8078.chatgpt.site)，2026-10-19 匿名验证 | health 为 live 且扶摇／模型均已配置；真实研究流 20 交易日、as-of 2026-10-16，DeepSeek 报告通过证据校验，`done=complete`；快照宽度 stale，证据覆盖率 67% |
 
 ## 已覆盖行为
 
@@ -51,3 +51,4 @@ Vitest 使用独立的 `vitest.config.ts`，不加载 Sites 的 Cloudflare Worke
 - iFinD MCP 尚未连接；本机技能鉴权请求返回 HTTP 401。估值、情绪、重要事件维度继续显示明确未接入状态。
 - 双源相同指标产生冲突时的双方值展示尚未验证；当前只有扶摇数据源，须待第二个有效数据源接入后验收。
 - 扶摇数据在页面、导出中的账户授权范围以及评审外部访问条件尚未确认。
+- 公开站点目前没有登录或请求限流；访客研究会使用服务端配置的上游额度。

@@ -9,12 +9,12 @@
 | 扶摇 REST 文档 | 已核对 | 官方文档说明使用 `https://fuyao.aicubes.cn` 和 `X-api-key`；指数历史日线支持单指数、`1d`、毫秒时间区间，覆盖最近五年；交易日历覆盖近一年；A 股行情快照可按 `limit`／`offset` 分页 |
 | 扶摇 API Key | 已配置并实测 | live 请求成功返回交易日历、上证指数日线、沪深 300／中证 1000 对比日线和全市场快照；本轮 20 日区间取得 21 个收盘点，截止 2026-10-16 |
 | 指数代码映射 | 已实测 | 上证 `000001.SH`、深证成指 `399001.SZ`、创业板 `399006.SZ`、沪深 300 `000300.SH`、中证 1000 `000852.SH` 均在服务器 live 研究流成功返回；深证成指和创业板各实测 21 个收盘点，截至 2026-10-16 |
-| 市场宽度 | 扶摇全市场快照已实测并可用 | 官方字段定义中 `snapshot.timestamp` 是数据就绪时间，不是交易日。2026-10-18 22:53（北京时间）全市场快照返回 5,580 条；按交易日历归属到最近完成交易日 2026-10-16。有效记录上涨 3,301、下跌 2,127、平盘 138，排除 14 条无效价格；上涨比例 59.31%。18 只跨分页抽样股票的 `last_price` 均与 10-16 历史收盘价相同；`prev_price` 有 17/18 与 10-15 收盘价相同，另 1 条存在差异，因此宽度按快照自身的 `last_price`／`prev_price` 原始口径计算 |
+| 市场宽度 | 曾实测可用；10-19 公开研究快照 stale | 10-18 全市场快照返回 5,580 条，归属 2026-10-16；上涨 3,301、下跌 2,127、平盘 138，排除 14 条无效价格，上涨比例 59.31%。但 10-19 匿名公开研究时，最新快照被质量规则判为 stale，因此当次未提供宽度判断。官方字段 `snapshot.timestamp` 是数据就绪时间，不是交易日；稳定的新鲜度仍需继续观察。 |
 | 风格比较 | live 已实测 | 沪深 300 与中证 1000 同交易日对齐；风格差指标出值，相关指数映射和对比请求成功 |
 | iFinD MCP | 未连接／认证失败 | 本机 iFinD 技能请求返回 HTTP 401（Gateway authentication failed）；服务端 MCP 鉴权、当前账户可用工具和调用 schema 未通过验证，项目未实现 iFinD 适配器 |
 | 运行时模型 | 已配置并实测 | 使用 DeepSeek Chat Completions `deepseek-flash`；关闭默认思考模式后，研究计划、JSON 报告与证据引用校验端到端通过 |
 | 数据展示授权 | 待确认 | 官方文档公开了接口结构，但当前账户授权、页面展示、导出及公开托管的许可范围尚未验证 |
-| Sites 托管 | 公开站点已发布 | [市场证据台](https://market-evidence-desk-20261018.minty-genet-8078.chatgpt.site)；公开 live 研究流将在本轮部署后复测 |
+| Sites 托管 | 已公开部署并实测 | [市场证据台](https://market-evidence-desk-20261018.minty-genet-8078.chatgpt.site)；匿名 health 为 live，真实研究流 `done=complete`。访客会消耗服务端上游额度，当前没有登录或请求限流 |
 | 私有服务器自托管 | 已部署并实测 | Ubuntu 24.04 Docker 容器运行；绑定用户 VPN 接口；容器 health 与真实研究流通过。具体内网地址不放入公开文档 |
 
 接口设计参考：[扶摇指数数据](https://fuyao.aicubes.cn/docs/api-reference/a-share-index/)、[扶摇股票行情数据](https://fuyao.aicubes.cn/docs/api-reference/prices/)、[扶摇交易日历](https://fuyao.aicubes.cn/docs/api-reference/calendar/)。文档核对不等于真实账户调用通过。
