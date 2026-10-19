@@ -29,10 +29,10 @@ describe("Markdown research export", () => {
     };
 
     const markdown = snapshotToMarkdown(snapshot);
-    expect(markdown).toContain("## AI 证据归纳");
+    expect(markdown).toContain("## AI 最终结论");
     expect(markdown).toContain("证据：E001");
     expect(markdown).toContain("核心证据覆盖：67%");
-    expect(markdown).toContain("AI 归纳由 test-model 基于本轮证据生成");
+    expect(markdown).toContain("AI 最终结论由 test-model 基于本轮证据生成");
     expect(markdown).not.toContain("运行时 AI 未连接");
   });
 
@@ -49,7 +49,7 @@ describe("Markdown research export", () => {
 
     const markdown = snapshotToMarkdown(snapshot);
     expect(markdown).toContain("模式：demo（合成演示）");
-    expect(markdown).toContain("本轮未生成 AI 研判");
+    expect(markdown).toContain("本轮未生成 AI 最终结论");
     expect(markdown).toContain("合成数据与代码计算仅用于演示");
   });
 });

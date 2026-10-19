@@ -164,15 +164,15 @@ function checkCitations(draft: z.infer<typeof draftSchema>, snapshot: ResearchSn
   const conditionIds = new Set(snapshot.switchConditions.map((item) => item.metricId));
   const allStatements = [draft.summary, ...draft.observations.map((item) => item.statement), ...draft.counterpoints.map((item) => item.statement), ...draft.uncertainties.map((item) => item.statement)];
   if (allStatements.some((statement) => restrictedAdvice.test(statement))) {
-    throw new ModelProviderError("模型输出越过研究边界，已隐藏本轮 AI 研判。", "REPORT_VALIDATION_FAILED");
+    throw new ModelProviderError("模型输出越过研究边界，已隐藏本轮 AI 最终结论。", "REPORT_VALIDATION_FAILED");
   }
   for (const item of [{ evidenceIds: draft.summaryEvidenceIds }, ...draft.observations, ...draft.counterpoints]) {
     if (item.evidenceIds.some((id) => !evidenceIds.has(id))) {
-      throw new ModelProviderError("模型引用了本轮不存在的证据，已隐藏本轮 AI 研判。", "REPORT_VALIDATION_FAILED");
+      throw new ModelProviderError("模型引用了本轮不存在的证据，已隐藏本轮 AI 最终结论。", "REPORT_VALIDATION_FAILED");
     }
   }
   if (draft.reevaluationConditionIds.some((id) => !conditionIds.has(id))) {
-    throw new ModelProviderError("模型引用了本轮不存在的复核条件，已隐藏本轮 AI 研判。", "REPORT_VALIDATION_FAILED");
+    throw new ModelProviderError("模型引用了本轮不存在的复核条件，已隐藏本轮 AI 最终结论。", "REPORT_VALIDATION_FAILED");
   }
 
   const evidenceById = new Map(snapshot.evidence.map((item) => [item.id, item]));
@@ -208,7 +208,7 @@ function checkCitations(draft: z.infer<typeof draftSchema>, snapshot: ResearchSn
       !supportedNumbers.some((supported) => Math.abs(value - supported) < 1e-8),
     );
     if (unsupportedNumber !== undefined) {
-      throw new ModelProviderError("模型输出包含引用证据或代码条件无法支持的数值，已隐藏本轮 AI 研判。", "REPORT_VALIDATION_FAILED");
+      throw new ModelProviderError("模型输出包含引用证据或代码条件无法支持的数值，已隐藏本轮 AI 最终结论。", "REPORT_VALIDATION_FAILED");
     }
   }
 }
@@ -258,11 +258,11 @@ export async function createAiReport(
         messages: [
           {
             role: "system",
-            content: "你是面向 A 股市场状态研究的证据归纳助手。只描述已给出的事实，不预测未来涨跌、不估计涨跌概率、不提出买卖、仓位或收益建议。只能使用给定的证据 ID；summary 必须带 1 到 10 个 summaryEvidenceIds，且每条 observation 和 counterpoint 必须带 1 到 5 个本轮证据 ID。区分事实、解释和不确定性。若数据是合成演示，拒绝将其解释为真实市场事实。所有数字、日期和比例必须能从直接引用的证据或 requestedPeriod、actualPeriod 中逐项核对；没有明确支持就改用定性表述。不要为了显得具体而补充任何数值。只返回符合要求的 JSON 对象，字段为 summary、summaryEvidenceIds、observations[{statement,evidenceIds}]、counterpoints[{statement,evidenceIds}]、uncertainties[{statement,dimension}]、reevaluationConditionIds。每个 uncertainties.dimension 必须逐字使用以下一个值：price、breadth、style、valuation、liquidity、sentiment、events；不要翻译或自造维度值。所有陈述使用简体中文。",
+            content: "你是面向 A 股市场状态研究的证据归纳助手。只描述已给出的事实，不预测未来涨跌、不估计涨跌概率、不提出买卖、仓位或收益建议。summary 是给用户的最终结论，必须直接回答用户问题，首句给出明确判断；证据不足时明确说无法判断，并指出限制，不能用一般性观察代替结论。只能使用给定的证据 ID；summary 必须带 1 到 10 个 summaryEvidenceIds，且每条 observation 和 counterpoint 必须带 1 到 5 个本轮证据 ID。区分事实、解释和不确定性。若数据是合成演示，拒绝将其解释为真实市场事实。所有数字、日期和比例必须能从直接引用的证据或 requestedPeriod、actualPeriod 中逐项核对；没有明确支持就改用定性表述。不要为了显得具体而补充任何数值。只返回符合要求的 JSON 对象，字段为 summary、summaryEvidenceIds、observations[{statement,evidenceIds}]、counterpoints[{statement,evidenceIds}]、uncertainties[{statement,dimension}]、reevaluationConditionIds。每个 uncertainties.dimension 必须逐字使用以下一个值：price、breadth、style、valuation、liquidity、sentiment、events；不要翻译或自造维度值。所有陈述使用简体中文。",
           },
           {
             role: "user",
-            content: `请根据以下本轮服务端证据，回答用户问题。没有证据支持的维度应放入 uncertainties；反证只从现有证据中寻找，不要编造。\n${buildPrompt(input, snapshot)}`,
+            content: `请根据以下本轮服务端证据回答用户问题。summary 必须作为最终结论直接回应用户的问题，并明确说明结论适用的区间和证据边界；没有足够证据时，直接给出“现有证据不足，无法判断”的结论。没有证据支持的维度应放入 uncertainties；反证只从现有证据中寻找，不要编造。\n${buildPrompt(input, snapshot)}`,
           },
         ],
       }),

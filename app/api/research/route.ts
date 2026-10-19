@@ -99,7 +99,7 @@ export async function POST(request: Request) {
           emit("snapshot", snapshot);
           emit("warning", {
             code: "MODEL_NOT_CONFIGURED",
-            message: "此页面展示合成数据和代码计算；运行时 AI 模型尚未连接，因此没有生成 AI 研判。",
+            message: "此页面展示合成数据和代码计算；运行时 AI 模型尚未连接，因此没有生成 AI 最终结论。",
             affectedDimensions: ["valuation", "sentiment", "events"],
           });
           emit("done", { outcome: "partial", mode: "demo", reportId: snapshot.reportId });
@@ -161,7 +161,7 @@ export async function POST(request: Request) {
               emit("tool_finished", { callId: "model-report", status: "failed", mode: "live" });
               emit("warning", {
                 code: modelError?.code ?? "MODEL_FAILED",
-                message: modelError?.message ?? "AI 研判未完成；本轮真实数据、规则标签与证据仍可查看。",
+                message: modelError?.message ?? "AI 最终结论未生成；本轮真实数据、规则标签与证据仍可查看。",
                 affectedDimensions: [],
               });
               emit("done", { outcome: "partial", mode: "live", reportId: snapshot.reportId });
@@ -169,7 +169,7 @@ export async function POST(request: Request) {
           } else {
             emit("warning", {
               code: "MODEL_NOT_CONFIGURED",
-              message: "本轮已读取并计算扶摇数据；尚未配置运行时模型，因此没有生成 AI 归纳或反证。",
+              message: "本轮已读取并计算扶摇数据；尚未配置运行时模型，因此没有生成 AI 最终结论、观察或反证。",
               affectedDimensions: ["valuation", "sentiment", "events"],
             });
             emit("done", { outcome: "partial", mode: "live", reportId: snapshot.reportId });

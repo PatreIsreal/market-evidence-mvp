@@ -20,11 +20,11 @@ export function snapshotToMarkdown(snapshot: ResearchSnapshot) {
   const report = snapshot.aiReport;
   const reportContext = report
     ? snapshot.synthetic
-      ? "> AI 归纳基于本轮合成演示证据，仅用于演示。"
-      : `> AI 归纳由 ${report.modelName} 基于本轮证据生成；请同时参考数据时点、口径与质量状态。`
+      ? "> AI 最终结论基于本轮合成演示证据，仅用于演示。"
+      : `> AI 最终结论由 ${report.modelName} 基于本轮证据生成；请同时参考数据时点、口径与质量状态。`
     : snapshot.synthetic
-      ? "> 本轮未生成 AI 研判；以下合成数据与代码计算仅用于演示。"
-      : "> 本轮未生成 AI 研判；导出仅包含已计算指标、来源状态与证据索引。";
+      ? "> 本轮未生成 AI 最终结论；以下合成数据与代码计算仅用于演示。"
+      : "> 本轮未生成 AI 最终结论；导出仅包含已计算指标、来源状态与证据索引。";
   return [
     `# ${snapshot.indexName}市场状态研究`,
     "",
@@ -42,7 +42,7 @@ export function snapshotToMarkdown(snapshot: ResearchSnapshot) {
     ...metrics.map(([label, value]) => `- ${label}：${value}`),
     ...(report ? [
       "",
-      "## AI 证据归纳",
+      "## AI 最终结论",
       "",
       `- 模型：${report.modelName}`,
       `- 核心证据覆盖：${report.evidenceCoverage}%（行情结构、市场宽度、风格；不代表涨跌概率）`,
@@ -51,7 +51,7 @@ export function snapshotToMarkdown(snapshot: ResearchSnapshot) {
       "",
       "摘要证据：" + report.summaryEvidenceIds.join(", "),
       "",
-      "### 观察与引用",
+      "### 证据支持的观察",
       "",
       ...report.observations.map((item) => `- ${item.statement}（证据：${item.evidenceIds.join(", ")}）`),
       ...(report.counterpoints.length ? ["", "### 反证与限制", "", ...report.counterpoints.map((item) => `- ${item.statement}（证据：${item.evidenceIds.join(", ")}）`)] : []),

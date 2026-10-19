@@ -64,10 +64,13 @@ describe("structured AI report", () => {
     let requestUrl = "";
     let authorization = "";
     let thinkingMode: unknown;
+    let systemPrompt = "";
     const fetcher: typeof fetch = async (url, init) => {
       requestUrl = String(url);
       authorization = new Headers(init?.headers).get("Authorization") ?? "";
-      thinkingMode = JSON.parse(String(init?.body)).thinking;
+      const body = JSON.parse(String(init?.body));
+      thinkingMode = body.thinking;
+      systemPrompt = body.messages[0].content;
       return Response.json({ choices: [{ message: { content: JSON.stringify(modelResponse()) } }] });
     };
     const report = await createAiReport(input, snapshot, {
@@ -83,6 +86,8 @@ describe("structured AI report", () => {
     expect(report.evidenceCoverage).toBe(100);
     expect(report.observations[0]?.evidenceIds).toEqual(["E001"]);
     expect(thinkingMode).toEqual({ type: "disabled" });
+    expect(systemPrompt).toContain("summary 是给用户的最终结论");
+    expect(systemPrompt).toContain("必须直接回答用户问题");
   });
 
   it("accepts a summary that cites six valid evidence items", async () => {
