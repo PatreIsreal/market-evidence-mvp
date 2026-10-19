@@ -371,6 +371,13 @@ function buildFallbackParts(snapshot: ResearchSnapshot, input: ResearchInput) {
       const item = usableEvidence.find((entry) => entry.dimension === dimension && (typeof entry.value === "number" || dimension === "events"));
       return item ? [item] : [];
     }).slice(0, 5);
+  const summaryEvidence = [
+    ...usableEvidence.filter((item) => item.dimension === "price" && /20 日区间收益|区间最大回撤/.test(item.label)),
+    ...["breadth", "style", "liquidity", "sentiment", "events"].flatMap((dimension) => {
+      const item = usableEvidence.find((entry) => entry.dimension === dimension);
+      return item ? [item] : [];
+    }),
+  ].slice(0, 10);
   const tag = snapshot.stateTags.find((item) => item.evidenceIds.some((id) => usableEvidence.some((entry) => entry.id === id)));
   const hasCoreData = snapshot.metrics.return20 !== null || snapshot.metrics.breadthLatest !== null;
   const summary = !hasCoreData
@@ -397,7 +404,7 @@ function buildFallbackParts(snapshot: ResearchSnapshot, input: ResearchInput) {
     .map(([dimension, status]) => ({ statement: status.explanation + " 数据截至" + (status.dataAsOf ?? "未知") + "。", dimension }));
   return {
     summary,
-    summaryEvidenceIds: keyEvidence.slice(0, 5).map((item) => item.id),
+    summaryEvidenceIds: (summaryEvidence.length ? summaryEvidence : keyEvidence).map((item) => item.id),
     observations,
     counterpoints: [],
     uncertainties,

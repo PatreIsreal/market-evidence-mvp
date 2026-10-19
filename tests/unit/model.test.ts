@@ -123,6 +123,7 @@ describe("structured AI report", () => {
     expect(report.generationMode).toBe("recovered");
     expect(report.summary).toContain("所选证据可以描述");
     expect(report.observations.length).toBeGreaterThan(0);
+    expect(report.summaryEvidenceIds).toContain("E003");
   });
 
   it("falls back to a rule conclusion when the model repeats unsupported numerical claims", async () => {
