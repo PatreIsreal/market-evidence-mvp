@@ -202,8 +202,45 @@ describe("Fuyao REST adapter", () => {
   });
 
   it("surfaces upstream HTTP errors instead of returning synthetic data", async () => {
-    const fetcher: typeof fetch = async () => new Response("upstream unavailable", { status: 503 });
+    let attempts = 0;
+    const fetcher: typeof fetch = async () => {
+      attempts += 1;
+      return new Response("upstream unavailable", { status: 503, headers: { "cf-ray": "test-ray-522" } });
+    };
     await expect(createFuyaoSnapshot(liveInput(), { FUYAO_API_KEY: "test-key" }, () => undefined, { fetcher }))
-      .rejects.toMatchObject({ code: "FUYAO_REQUEST_FAILED" });
+      .rejects.toMatchObject({ code: "FUYAO_UPSTREAM_HTTP_ERROR", retryable: true, message: expect.stringContaining("test-ray-522") });
+    expect(attempts).toBe(3);
+  });
+
+  it("recovers from a transient Cloudflare 522 and exposes a key-free retry diagnostic", async () => {
+    const mock = mockProvider();
+    let calendarAttempts = 0;
+    const events: Array<{ type: string; data: Record<string, unknown> }> = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/api/a-share/calendar/trading-days" && calendarAttempts++ === 0) {
+        return new Response("origin timeout", { status: 522, headers: { "cf-ray": "retry-ray-123" } });
+      }
+      return mock.fetcher(input, init);
+    };
+
+    const snapshot = await createFuyaoSnapshot(liveInput(), { FUYAO_API_KEY: "test-key" }, (type, data) => {
+      events.push({ type, data: data as Record<string, unknown> });
+    }, {
+      fetcher,
+      now: new Date("2026-10-16T10:00:00.000Z"),
+      dimensions: ["price"],
+    });
+
+    expect(snapshot.priceSeries).toHaveLength(5);
+    expect(calendarAttempts).toBe(2);
+    expect(events.find((event) => event.type === "tool_retrying")?.data).toMatchObject({
+      callId: "calendar",
+      attempt: 1,
+      nextAttempt: 2,
+      httpStatus: 522,
+      rayId: "retry-ray-123",
+    });
+    expect(JSON.stringify(events)).not.toContain("test-key");
   });
 });

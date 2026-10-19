@@ -147,6 +147,10 @@ export function ResearchWorkspace() {
       const data = event.data as { callId: string; status: string };
       setToolStatus((previous) => ({ ...previous, [data.callId]: qualityText(data.status) }));
     }
+    if (event.type === "tool_retrying") {
+      const data = event.data as { callId: string; attempt: number; maxAttempts: number };
+      setToolStatus((previous) => ({ ...previous, [data.callId]: `重试中（${data.attempt}/${data.maxAttempts}）` }));
+    }
     if (event.type === "snapshot") setSnapshot(event.data as ResearchSnapshot);
     if (event.type === "report") setAiReport(event.data as AiReport);
     if (event.type === "warning") {

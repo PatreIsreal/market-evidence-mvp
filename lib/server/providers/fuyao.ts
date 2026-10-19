@@ -64,10 +64,35 @@ type Fetcher = typeof fetch;
 type ApiResult<T> = { data: T; requestId: string | null; path: string };
 
 export class FuyaoProviderError extends Error {
-  constructor(message: string, readonly code = "FUYAO_REQUEST_FAILED") {
+  constructor(message: string, readonly code = "FUYAO_REQUEST_FAILED", readonly retryable = false) {
     super(message);
     this.name = "FuyaoProviderError";
   }
+}
+
+const maxFuyaoAttempts = 3;
+const fuyaoAttemptTimeoutMs = 12_000;
+
+function isRetryableHttpStatus(status: number) {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function waitBeforeRetry(milliseconds: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new Error("请求已取消。"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, milliseconds);
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new Error("请求已取消。"));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 }
 
 function formatShanghaiDate(value: number | Date) {
@@ -161,26 +186,99 @@ async function callFuyao<T>(args: {
   for (const [key, value] of Object.entries(args.params ?? {})) url.searchParams.set(key, String(value));
   emit("tool_started", { callId, toolName: "fuyao_rest_api", purpose });
 
-  try {
-    const response = await fetcher(url, {
-      headers: { "X-api-key": apiKey, Accept: "application/json" },
-      signal: signal ?? AbortSignal.timeout(15_000),
-    });
-    if (!response.ok) throw new FuyaoProviderError(`扶摇数据接口返回 HTTP ${response.status}。`);
-    const envelope = envelopeSchema.safeParse(await response.json());
-    if (!envelope.success) throw new FuyaoProviderError("扶摇响应结构与已验证的接口契约不匹配。", "INVALID_PROVIDER_RESPONSE");
-    if (envelope.data.code !== 0) {
-      throw new FuyaoProviderError(`扶摇数据接口未成功：${envelope.data.message || `业务代码 ${envelope.data.code}`}。`, `FUYAO_${envelope.data.code}`);
+  const startedAt = Date.now();
+  for (let attempt = 1; attempt <= maxFuyaoAttempts; attempt += 1) {
+    if (signal?.aborted) {
+      emit("tool_finished", { callId, status: "failed", mode: "live", attempts: attempt - 1, elapsedMs: Date.now() - startedAt });
+      throw signal.reason ?? new Error("请求已取消。");
     }
-    const parsed = schema.safeParse(envelope.data.data);
-    if (!parsed.success) throw new FuyaoProviderError("扶摇数据字段未通过本地结构校验。", "INVALID_PROVIDER_RESPONSE");
-    emit("tool_finished", { callId, status: "available", mode: "live", requestId: envelope.data.request_id ?? null });
-    return { data: parsed.data, requestId: envelope.data.request_id ?? null, path: `${url.origin}${url.pathname}` };
-  } catch (error) {
-    emit("tool_finished", { callId, status: "failed", mode: "live" });
-    if (error instanceof FuyaoProviderError) throw error;
-    throw new FuyaoProviderError("扶摇数据请求失败或超时；未使用演示数据替代。", "FUYAO_NETWORK_ERROR");
+
+    const attemptStartedAt = Date.now();
+    const timeoutSignal = AbortSignal.timeout(fuyaoAttemptTimeoutMs);
+    const attemptSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+    try {
+      const response = await fetcher(url, {
+        headers: { "X-api-key": apiKey, Accept: "application/json" },
+        signal: attemptSignal,
+      });
+      const elapsedMs = Date.now() - attemptStartedAt;
+      const rayId = response.headers.get("cf-ray");
+      const upstreamRequestId = response.headers.get("x-request-id");
+      if (!response.ok) {
+        try { await response.body?.cancel(); } catch { /* The upstream may already have closed its response. */ }
+        if (isRetryableHttpStatus(response.status) && attempt < maxFuyaoAttempts) {
+          const delayMs = 300 * 2 ** (attempt - 1);
+          emit("tool_retrying", { callId, attempt, nextAttempt: attempt + 1, maxAttempts: maxFuyaoAttempts, delayMs, httpStatus: response.status, rayId, upstreamRequestId, elapsedMs });
+          await waitBeforeRetry(delayMs, signal);
+          continue;
+        }
+        const diagnostic = [
+          `HTTP ${response.status}`,
+          `尝试 ${attempt}/${maxFuyaoAttempts}`,
+          rayId ? `Cloudflare Ray ID ${rayId}` : null,
+          upstreamRequestId ? `上游请求 ID ${upstreamRequestId}` : null,
+        ].filter(Boolean).join("，");
+        throw new FuyaoProviderError(
+          `扶摇数据接口返回 ${diagnostic}。${isRetryableHttpStatus(response.status) ? "请稍后重试；" : ""}未使用演示数据替代。`,
+          isRetryableHttpStatus(response.status) ? "FUYAO_UPSTREAM_HTTP_ERROR" : "FUYAO_REQUEST_FAILED",
+          isRetryableHttpStatus(response.status),
+        );
+      }
+
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        throw new FuyaoProviderError("扶摇接口返回的内容不是有效 JSON。", "INVALID_PROVIDER_RESPONSE");
+      }
+      const envelope = envelopeSchema.safeParse(body);
+      if (!envelope.success) throw new FuyaoProviderError("扶摇响应结构与已验证的接口契约不匹配。", "INVALID_PROVIDER_RESPONSE");
+      if (envelope.data.code !== 0) {
+        throw new FuyaoProviderError(`扶摇数据接口未成功：${envelope.data.message || `业务代码 ${envelope.data.code}`}。`, `FUYAO_${envelope.data.code}`);
+      }
+      const parsed = schema.safeParse(envelope.data.data);
+      if (!parsed.success) throw new FuyaoProviderError("扶摇数据字段未通过本地结构校验。", "INVALID_PROVIDER_RESPONSE");
+      emit("tool_finished", {
+        callId,
+        status: "available",
+        mode: "live",
+        attempts: attempt,
+        elapsedMs: Date.now() - startedAt,
+        requestId: envelope.data.request_id ?? upstreamRequestId,
+        rayId,
+      });
+      return { data: parsed.data, requestId: envelope.data.request_id ?? null, path: `${url.origin}${url.pathname}` };
+    } catch (error) {
+      if (signal?.aborted) {
+        emit("tool_finished", { callId, status: "failed", mode: "live", attempts: attempt, elapsedMs: Date.now() - startedAt });
+        throw signal.reason ?? error;
+      }
+      if (error instanceof FuyaoProviderError) {
+        if (error.retryable && attempt < maxFuyaoAttempts) {
+          const delayMs = 300 * 2 ** (attempt - 1);
+          emit("tool_retrying", { callId, attempt, nextAttempt: attempt + 1, maxAttempts: maxFuyaoAttempts, delayMs, elapsedMs: Date.now() - attemptStartedAt, errorCode: error.code });
+          await waitBeforeRetry(delayMs, signal);
+          continue;
+        }
+        emit("tool_finished", { callId, status: "failed", mode: "live", attempts: attempt, elapsedMs: Date.now() - startedAt, errorCode: error.code });
+        throw error;
+      }
+      if (attempt < maxFuyaoAttempts) {
+        const delayMs = 300 * 2 ** (attempt - 1);
+        emit("tool_retrying", { callId, attempt, nextAttempt: attempt + 1, maxAttempts: maxFuyaoAttempts, delayMs, elapsedMs: Date.now() - attemptStartedAt, errorCode: "FUYAO_NETWORK_ERROR" });
+        await waitBeforeRetry(delayMs, signal);
+        continue;
+      }
+      emit("tool_finished", { callId, status: "failed", mode: "live", attempts: attempt, elapsedMs: Date.now() - startedAt, errorCode: "FUYAO_NETWORK_ERROR" });
+      throw new FuyaoProviderError(
+        `扶摇数据请求在 ${maxFuyaoAttempts} 次尝试后仍失败或超时（单次上限 ${fuyaoAttemptTimeoutMs / 1000} 秒）。未使用演示数据替代。`,
+        "FUYAO_NETWORK_ERROR",
+        true,
+      );
+    }
   }
+
+  throw new FuyaoProviderError("扶摇数据请求失败；未使用演示数据替代。", "FUYAO_NETWORK_ERROR", true);
 }
 
 function barsFromResult(result: ApiResult<z.infer<typeof historicalSchema>>): PricePoint[] {

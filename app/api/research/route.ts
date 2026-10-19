@@ -179,7 +179,7 @@ export async function POST(request: Request) {
           emit("error", {
             code: providerError?.code ?? "RESEARCH_FAILED",
             message: providerError?.message ?? "本轮研究未完成；没有使用演示数据替代。",
-            retryable: providerError?.code === "FUYAO_NETWORK_ERROR",
+            retryable: providerError?.retryable ?? false,
           });
           emit("done", { outcome: "failed", mode: "live" });
         }
