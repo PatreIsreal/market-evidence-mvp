@@ -15,7 +15,7 @@ function liveInput(endDate = "2026-10-16") {
   });
 }
 
-function mockProvider() {
+function mockProvider(snapshotReadyAt: number | null = Date.parse("2026-10-16T16:30:00+08:00")) {
   const dates = ["2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16"];
   const items = dates.map((date, index) => ({
     date_ms: dateMs(date),
@@ -36,7 +36,7 @@ function mockProvider() {
       data = { timestamp: dateMs("2026-10-16"), item: items };
     } else if (url.pathname === "/api/a-share/prices/snapshot") {
       data = {
-        timestamp: dateMs("2026-10-16"),
+        timestamp: snapshotReadyAt,
         total: 2,
         item: [
           { thscode: "600000.SH", last_price: 11, prev_price: 10 },
@@ -54,8 +54,8 @@ function mockProvider() {
 describe("Fuyao REST adapter", () => {
   it("maps documented index bars and computes breadth only from a matching full-market snapshot", async () => {
     const mock = mockProvider();
-    const events: string[] = [];
-    const snapshot = await createFuyaoSnapshot(liveInput(), { FUYAO_API_KEY: "test-key" }, (type) => events.push(type), {
+    const events: Array<{ type: string; data: { callId?: string; status?: string } }> = [];
+    const snapshot = await createFuyaoSnapshot(liveInput(), { FUYAO_API_KEY: "test-key" }, (type, data) => events.push({ type, data: data as { callId?: string; status?: string } }), {
       fetcher: mock.fetcher,
       now: new Date("2026-10-16T10:00:00.000Z"),
     });
@@ -69,12 +69,14 @@ describe("Fuyao REST adapter", () => {
     expect(snapshot.switchConditions[0].evaluation).toBe("not_met");
     expect(snapshot.sourceLabel).toContain("扶摇");
     expect(mock.calls.filter((call) => call.includes("prices/historical"))).toHaveLength(3);
-    expect(events.filter((event) => event === "tool_started").length).toBeGreaterThanOrEqual(5);
+    expect(events.filter((event) => event.type === "tool_started").length).toBeGreaterThanOrEqual(5);
+    expect(events.filter((event) => event.type === "tool_finished" && event.data.callId === "market-snapshot-1").at(-1)?.data.status).toBe("available");
   });
 
   it("does not use the latest snapshot to fill an older historical breadth date", async () => {
     const mock = mockProvider();
-    const snapshot = await createFuyaoSnapshot(liveInput("2026-10-15"), { FUYAO_API_KEY: "test-key" }, () => undefined, {
+    const events: Array<{ type: string; data: { callId?: string; status?: string } }> = [];
+    const snapshot = await createFuyaoSnapshot(liveInput("2026-10-15"), { FUYAO_API_KEY: "test-key" }, (type, data) => events.push({ type, data: data as { callId?: string; status?: string } }), {
       fetcher: mock.fetcher,
       now: new Date("2026-10-16T10:00:00.000Z"),
     });
@@ -82,6 +84,95 @@ describe("Fuyao REST adapter", () => {
     expect(snapshot.dimensionStatuses.breadth.status).toBe("unavailable");
     expect(snapshot.metrics.breadthLatest).toBeNull();
     expect(mock.calls.some((call) => call.includes("prices/snapshot"))).toBe(false);
+    expect(events.filter((event) => event.type === "tool_finished" && event.data.callId === "market-snapshot-1").at(-1)?.data.status).toBe("unavailable");
+  });
+
+  it("assigns a weekend-ready snapshot to the latest completed trading day", async () => {
+    const readyAt = Date.parse("2026-10-18T22:30:00+08:00");
+    const mock = mockProvider(readyAt);
+    const snapshot = await createFuyaoSnapshot(liveInput(), { FUYAO_API_KEY: "test-key" }, () => undefined, {
+      fetcher: mock.fetcher,
+      now: new Date("2026-10-18T14:35:00.000Z"),
+    });
+
+    expect(snapshot.dimensionStatuses.breadth.status).toBe("available");
+    expect(snapshot.dimensionStatuses.breadth.dataAsOf).toBe("2026-10-16");
+    expect(snapshot.breadthSeries[0]?.tradeDate).toBe("2026-10-16");
+    expect(snapshot.breadthSeries[0]?.upCount).toBe(1);
+    expect(snapshot.breadthSeries[0]?.downCount).toBe(1);
+    expect(snapshot.evidence.find((item) => item.dimension === "breadth")?.scopeDescription).toContain("数据就绪时间");
+    expect(snapshot.evidence.find((item) => item.dimension === "breadth")?.scopeDescription).toContain("2026-10-16");
+  });
+
+  it("does not mix an intraday snapshot with the previous completed close", async () => {
+    const mock = mockProvider(Date.parse("2026-10-16T10:00:00+08:00"));
+    const events: Array<{ type: string; data: { callId?: string; status?: string } }> = [];
+    const snapshot = await createFuyaoSnapshot(liveInput("2026-10-15"), { FUYAO_API_KEY: "test-key" }, (type, data) => events.push({ type, data: data as { callId?: string; status?: string } }), {
+      fetcher: mock.fetcher,
+      now: new Date("2026-10-16T02:00:00.000Z"),
+    });
+
+    expect(snapshot.dimensionStatuses.breadth.status).toBe("stale");
+    expect(snapshot.dimensionStatuses.breadth.explanation).toContain("交易或收盘确认时段");
+    expect(snapshot.metrics.breadthLatest).toBeNull();
+    expect(mock.calls.some((call) => call.includes("prices/snapshot"))).toBe(false);
+    expect(events.filter((event) => event.type === "tool_finished" && event.data.callId === "market-snapshot-1").at(-1)?.data.status).toBe("stale");
+  });
+
+  it("rejects a same-day snapshot timestamp before close confirmation", async () => {
+    const mock = mockProvider(Date.parse("2026-10-16T15:50:00+08:00"));
+    const snapshot = await createFuyaoSnapshot(liveInput(), { FUYAO_API_KEY: "test-key" }, () => undefined, {
+      fetcher: mock.fetcher,
+      now: new Date("2026-10-16T10:00:00.000Z"),
+    });
+
+    expect(snapshot.dimensionStatuses.breadth.status).toBe("stale");
+    expect(snapshot.dimensionStatuses.breadth.explanation).toContain("无法确认");
+    expect(snapshot.metrics.breadthLatest).toBeNull();
+  });
+
+  it("rejects a market snapshot that is missing its data-ready timestamp", async () => {
+    const mock = mockProvider(null);
+    const snapshot = await createFuyaoSnapshot(liveInput(), { FUYAO_API_KEY: "test-key" }, () => undefined, {
+      fetcher: mock.fetcher,
+      now: new Date("2026-10-16T10:00:00.000Z"),
+    });
+
+    expect(snapshot.dimensionStatuses.breadth.status).toBe("stale");
+    expect(snapshot.dimensionStatuses.breadth.explanation).toContain("就绪时间为 未知");
+    expect(snapshot.metrics.breadthLatest).toBeNull();
+  });
+
+  it("refuses to compute breadth from an incomplete full-market pagination", async () => {
+    const mock = mockProvider();
+    const fetcher: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/api/a-share/prices/snapshot") {
+        return Response.json({
+          code: 0,
+          message: "success",
+          data: {
+            timestamp: Date.parse("2026-10-16T16:30:00+08:00"),
+            total: 3,
+            item: url.searchParams.get("offset") === "0"
+              ? [
+                { thscode: "600000.SH", last_price: 11, prev_price: 10 },
+                { thscode: "000001.SZ", last_price: 9, prev_price: 10 },
+              ]
+              : [],
+          },
+        });
+      }
+      return mock.fetcher(input, init);
+    };
+    const snapshot = await createFuyaoSnapshot(liveInput(), { FUYAO_API_KEY: "test-key" }, () => undefined, {
+      fetcher,
+      now: new Date("2026-10-16T10:00:00.000Z"),
+    });
+
+    expect(snapshot.dimensionStatuses.breadth.status).toBe("failed");
+    expect(snapshot.dimensionStatuses.breadth.explanation).toContain("仅返回 2/3 条记录");
+    expect(snapshot.metrics.breadthLatest).toBeNull();
   });
 
   it("executes only the safe dimensions selected by a validated research plan", async () => {
@@ -108,5 +199,11 @@ describe("Fuyao REST adapter", () => {
     const fetcher: typeof fetch = async () => Response.json({ code: 2003, message: "permission denied", data: null });
     await expect(createFuyaoSnapshot(liveInput(), { FUYAO_API_KEY: "test-key" }, () => undefined, { fetcher }))
       .rejects.toBeInstanceOf(FuyaoProviderError);
+  });
+
+  it("surfaces upstream HTTP errors instead of returning synthetic data", async () => {
+    const fetcher: typeof fetch = async () => new Response("upstream unavailable", { status: 503 });
+    await expect(createFuyaoSnapshot(liveInput(), { FUYAO_API_KEY: "test-key" }, () => undefined, { fetcher }))
+      .rejects.toMatchObject({ code: "FUYAO_REQUEST_FAILED" });
   });
 });

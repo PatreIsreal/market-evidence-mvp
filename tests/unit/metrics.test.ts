@@ -25,6 +25,23 @@ describe("market metrics", () => {
     expect(annualizedVolatility([100, 101], 2)).toBeNull();
   });
 
+  it("keeps extreme values and zero denominators finite or explicitly unavailable", () => {
+    expect(intervalReturn([1e-308, 1e308], 1)).toBeNull();
+    expect(simpleMovingAverage([1e308, 1e308], 2)).toBe(1e308);
+    expect(Number.isFinite(annualizedVolatility([1e-308, 1e308, 1e-308], 2))).toBe(true);
+    expect(breadthRatio({ tradeDate: "2026-10-16", upCount: 0, downCount: 0, flatCount: 0, universeDefinition: "A股" })).toBeNull();
+    expect(breadthRatio({ tradeDate: "2026-10-16", upCount: Number.MAX_SAFE_INTEGER + 1, downCount: 0, flatCount: 0, universeDefinition: "A股" })).toBeNull();
+    const zeroBaseline = Array.from({ length: 21 }, (_, index) => ({
+      tradeDate: `2026-10-${String(index + 1).padStart(2, "0")}`,
+      open: 1,
+      high: 1,
+      low: 1,
+      close: 1,
+      amountCny: index === 20 ? 100 : 0,
+    } satisfies PricePoint));
+    expect(amountRatio(zeroBaseline)).toBeNull();
+  });
+
   it("uses the full breadth denominator and refuses mixed populations", () => {
     const points: BreadthPoint[] = [
       { tradeDate: "2026-10-16", upCount: 50, downCount: 40, flatCount: 10, universeDefinition: "A" },

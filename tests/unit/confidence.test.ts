@@ -34,6 +34,16 @@ describe("research confidence assessment", () => {
     expect(confidence.reason).toContain("市场宽度");
   });
 
+  it("lowers confidence when a focus-required dimension has conflicting sources", () => {
+    const snapshot = createSnapshot();
+    snapshot.synthetic = false;
+    snapshot.dimensionStatuses.breadth = { status: "conflict", dataAsOf: "2026-10-16", explanation: "两个来源的样本口径不同" };
+
+    const confidence = assessResearchConfidence(snapshot, true);
+    expect(confidence.level).toBe("low");
+    expect(confidence.reason).toContain("市场宽度");
+  });
+
   it("caps confidence at medium when only single-day breadth is available", () => {
     const snapshot = createSnapshot();
     snapshot.synthetic = false;

@@ -81,6 +81,36 @@ function formatShanghaiDate(value: number | Date) {
   return `${fields.year}-${fields.month}-${fields.day}`;
 }
 
+function formatShanghaiDateTime(value: number | Date) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).format(value instanceof Date ? value : new Date(value));
+}
+
+function minutesAfterMidnight(value: number | Date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(value instanceof Date ? value : new Date(value));
+  const fields = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return Number(fields.hour) * 60 + Number(fields.minute);
+}
+
+function isAshareSessionOrCloseFinalization(tradeDates: string[], now: Date) {
+  const today = formatShanghaiDate(now);
+  const minute = minutesAfterMidnight(now);
+  return tradeDates.includes(today) && minute >= 9 * 60 + 15 && minute < 16 * 60;
+}
+
 function dateFromCompact(value: string) {
   if (!/^\d{8}$/.test(value)) throw new FuyaoProviderError("扶摇交易日历返回了无法识别的日期。", "INVALID_PROVIDER_RESPONSE");
   return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
@@ -343,71 +373,100 @@ export async function createFuyaoSnapshot(
   let breadthLatest: number | null = null;
   let eBreadth: string | null = null;
   const isLatestCompletedDate = Boolean(latestCompleted && endDate === latestCompleted && actualEnd === latestCompleted);
+  const finishBreadthTool = (status: string) => emit("tool_finished", { callId: "market-snapshot-1", status, mode: "live" });
+  if (requestedDimensions.includes("breadth") && !isLatestCompletedDate) finishBreadthTool("unavailable");
   if (isLatestCompletedDate && requestedDimensions.includes("breadth")) {
-    try {
-      const allItems: Array<z.infer<typeof snapshotSchema>["item"][number]> = [];
-      const firstPage = await callFuyao({
-        baseUrl,
-        apiKey,
-        path: "/api/a-share/prices/snapshot",
-        params: { limit: 1000, offset: 0 },
-        callId: "market-snapshot-1",
-        purpose: "读取全市场最新个股价格，计算当日上涨／下跌／平盘家数",
-        schema: snapshotSchema,
-        emit,
-        fetcher,
-        signal: options.signal,
-      });
-      const snapshotDate = firstPage.data.timestamp ? formatShanghaiDate(firstPage.data.timestamp) : null;
-      if (snapshotDate !== latestCompleted) {
-        breadthStatus = { status: "stale", explanation: `全市场快照时点为 ${snapshotDate ?? "未知"}，与所选交易日不一致，因此未用于计算。`, dataAsOf: snapshotDate };
-      } else {
-        const confirmedSnapshotDate = snapshotDate as string;
-        allItems.push(...firstPage.data.item);
-        let offset = firstPage.data.item.length;
-        const maxRows = Math.min(6_000, firstPage.data.total);
-        let pageNumber = 2;
-        while (offset < maxRows && pageNumber <= 6) {
-          const page = await callFuyao({
-            baseUrl,
-            apiKey,
-            path: "/api/a-share/prices/snapshot",
-            params: { limit: 1000, offset },
-            callId: "market-snapshot-1",
-            purpose: `读取全市场行情快照第 ${pageNumber} 页`,
-            schema: snapshotSchema,
-            emit,
-            fetcher,
-            signal: options.signal,
-          });
-          if (page.data.timestamp && formatShanghaiDate(page.data.timestamp) !== confirmedSnapshotDate) {
-            throw new FuyaoProviderError("全市场快照分页期间数据时点发生变化；本轮宽度计算已中止。", "SNAPSHOT_TIME_CONFLICT");
+    if (isAshareSessionOrCloseFinalization(tradeDates, now)) {
+      breadthStatus = {
+        status: "stale",
+        explanation: "当前处于 A 股交易或收盘确认时段；最新全市场快照可能包含盘中价格，本轮不与最近完成交易日的收盘日线混合计算。收盘确认后可重试。",
+        dataAsOf: null,
+      };
+      finishBreadthTool("stale");
+    } else {
+      try {
+        const allItems: Array<z.infer<typeof snapshotSchema>["item"][number]> = [];
+        const firstPage = await callFuyao({
+          baseUrl,
+          apiKey,
+          path: "/api/a-share/prices/snapshot",
+          params: { limit: 1000, offset: 0 },
+          callId: "market-snapshot-1",
+          purpose: "读取全市场最新个股价格，计算当日上涨／下跌／平盘家数",
+          schema: snapshotSchema,
+          emit,
+          fetcher,
+          signal: options.signal,
+        });
+        const snapshotReadyAt = firstPage.data.timestamp;
+        const snapshotReadyDate = snapshotReadyAt ? formatShanghaiDate(snapshotReadyAt) : null;
+        const readyAtTradeDateClose = typeof snapshotReadyAt === "number"
+          && snapshotReadyDate === latestCompleted
+          && minutesAfterMidnight(snapshotReadyAt) >= 16 * 60;
+        const readyAtOrAfterTradeDate = Boolean(snapshotReadyAt && snapshotReadyDate && snapshotReadyDate >= latestCompleted!);
+        const readyAtNotInFuture = Boolean(snapshotReadyAt && snapshotReadyAt <= now.getTime() + 5 * 60_000);
+        if (!snapshotReadyAt || !readyAtOrAfterTradeDate || !readyAtNotInFuture || (snapshotReadyDate === latestCompleted && !readyAtTradeDateClose)) {
+          const readyAt = snapshotReadyAt ? formatShanghaiDateTime(snapshotReadyAt) : "未知";
+          breadthStatus = {
+            status: "stale",
+            explanation: `全市场快照数据就绪时间为 ${readyAt}；无法确认其包含 ${latestCompleted} 收盘数据，因此未用于计算。`,
+            dataAsOf: null,
+          };
+          finishBreadthTool("stale");
+        } else {
+          const confirmedSnapshotDate = latestCompleted!;
+          const readyAtLabel = formatShanghaiDateTime(snapshotReadyAt);
+          allItems.push(...firstPage.data.item);
+          let offset = firstPage.data.item.length;
+          const maxRows = Math.min(6_000, firstPage.data.total);
+          let pageNumber = 2;
+          while (offset < maxRows && pageNumber <= 6) {
+            const page = await callFuyao({
+              baseUrl,
+              apiKey,
+              path: "/api/a-share/prices/snapshot",
+              params: { limit: 1000, offset },
+              callId: "market-snapshot-1",
+              purpose: `读取全市场行情快照第 ${pageNumber} 页`,
+              schema: snapshotSchema,
+              emit,
+              fetcher,
+              signal: options.signal,
+            });
+            if (!page.data.timestamp
+              || formatShanghaiDate(page.data.timestamp) < confirmedSnapshotDate
+              || formatShanghaiDate(page.data.timestamp) > formatShanghaiDate(now)
+              || page.data.timestamp > now.getTime() + 5 * 60_000) {
+              throw new FuyaoProviderError("全市场快照分页期间数据时点发生变化；本轮宽度计算已中止。", "SNAPSHOT_TIME_CONFLICT");
+            }
+            if (page.data.item.length === 0) break;
+            allItems.push(...page.data.item);
+            offset += page.data.item.length;
+            pageNumber += 1;
           }
-          if (page.data.item.length === 0) break;
-          allItems.push(...page.data.item);
-          offset += page.data.item.length;
-          pageNumber += 1;
+          if (allItems.length < firstPage.data.total) {
+            throw new FuyaoProviderError(`全市场快照仅返回 ${allItems.length}/${firstPage.data.total} 条记录；为避免偏样本宽度，本轮不计算上涨比例。`, "INCOMPLETE_MARKET_SNAPSHOT");
+          }
+          const counts = currentBreadthFromSnapshot(allItems);
+          const breadthPoint = {
+            tradeDate: confirmedSnapshotDate,
+            ...counts,
+            universeDefinition: `扶摇全市场股票快照中有效现价与前收盘价记录；快照数据就绪时间 ${readyAtLabel}，按交易日历归属到最近已完成交易日 ${confirmedSnapshotDate}；返回 ${allItems.length} 条，排除 ${counts.excludedCount} 条无有效价格记录。`,
+          };
+          breadthSeries = [{ ...breadthPoint }];
+          breadthLatest = breadthRatio({ ...breadthPoint, flatCount: counts.flatCount });
+          breadthStatus = allItems.length > 0
+            ? { status: "available", explanation: breadthPoint.universeDefinition, dataAsOf: confirmedSnapshotDate }
+            : { status: "missing", explanation: "全市场快照没有返回可用于计算的股票记录。", dataAsOf: confirmedSnapshotDate };
+          finishBreadthTool(allItems.length > 0 ? "available" : "missing");
+          if (breadthLatest !== null) {
+            eBreadth = addEvidence(evidence, "breadth", "全市场当日上涨比例", breadthLatest * 100, "%", [confirmedSnapshotDate], "breadthLatest", "上涨家数 / (上涨 + 下跌 + 平盘家数)", ["last_price", "prev_price"], "fuyao.a_share.snapshot", breadthPoint.universeDefinition, `${baseUrl.replace(/\/+$/, "")}/api/a-share/prices/snapshot`);
+          }
         }
-        if (allItems.length < firstPage.data.total) {
-          throw new FuyaoProviderError(`全市场快照仅返回 ${allItems.length}/${firstPage.data.total} 条记录；为避免偏样本宽度，本轮不计算上涨比例。`, "INCOMPLETE_MARKET_SNAPSHOT");
-        }
-        const counts = currentBreadthFromSnapshot(allItems);
-        const breadthPoint = {
-          tradeDate: confirmedSnapshotDate,
-          ...counts,
-          universeDefinition: `扶摇全市场股票快照中有效现价与前收盘价记录；返回 ${allItems.length} 条，排除 ${counts.excludedCount} 条无有效价格记录。`,
-        };
-        breadthSeries = [{ ...breadthPoint }];
-        breadthLatest = breadthRatio({ ...breadthPoint, flatCount: counts.flatCount });
-        breadthStatus = allItems.length > 0
-          ? { status: "available", explanation: breadthPoint.universeDefinition, dataAsOf: confirmedSnapshotDate }
-          : { status: "missing", explanation: "全市场快照没有返回可用于计算的股票记录。", dataAsOf: confirmedSnapshotDate };
-        if (breadthLatest !== null) {
-          eBreadth = addEvidence(evidence, "breadth", "全市场当日上涨比例", breadthLatest * 100, "%", [confirmedSnapshotDate], "breadthLatest", "上涨家数 / (上涨 + 下跌 + 平盘家数)", ["last_price", "prev_price"], "fuyao.a_share.snapshot", breadthPoint.universeDefinition, `${baseUrl.replace(/\/+$/, "")}/api/a-share/prices/snapshot`);
-        }
+      } catch (error) {
+        breadthStatus = { status: "failed", explanation: error instanceof Error ? error.message : "全市场快照调用失败。", dataAsOf: null };
+        finishBreadthTool("failed");
       }
-    } catch (error) {
-      breadthStatus = { status: "failed", explanation: error instanceof Error ? error.message : "全市场快照调用失败。", dataAsOf: null };
     }
   }
 

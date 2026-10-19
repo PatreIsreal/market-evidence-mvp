@@ -135,7 +135,7 @@ export async function POST(request: Request) {
           { callId: "calendar", toolName: "get_a_share_calendar_trading_days", purpose: "确定最近已完成的 A 股交易日", status: "planned" },
           { callId: "index-primary", toolName: "get_a_share_index_prices_historical", purpose: "读取主观察指数历史日线", status: "planned" },
           ...comparisons.map((_, index) => ({ callId: "index-comparison-" + (index + 1), toolName: "get_a_share_index_prices_historical", purpose: "读取同期对比指数日线", status: "planned" })),
-          ...(dimensions.includes("breadth") ? [{ callId: "market-snapshot-1", toolName: "get_a_share_prices_snapshot", purpose: "读取最新全市场行情以计算市场宽度", status: "planned" }] : []),
+          ...(dimensions.includes("breadth") ? [{ callId: "market-snapshot-1", toolName: "get_a_share_prices_snapshot", purpose: "读取最近已完成交易日对应的全市场快照（收盘确认后）计算市场宽度", status: "planned" }] : []),
           ...(config.modelConfigured ? [{ callId: "model-report", toolName: "runtime_model", purpose: "生成有证据引用的归纳与反证", status: "planned" }] : []),
         ];
         emit("plan", {

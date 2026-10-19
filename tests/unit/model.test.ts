@@ -114,6 +114,78 @@ describe("structured AI report", () => {
     }, { fetcher })).rejects.toMatchObject({ code: "REPORT_VALIDATION_FAILED" });
   });
 
+  it("rejects numerical claims that the cited evidence cannot support", async () => {
+    const snapshot = liveSnapshot();
+    const fetcher: typeof fetch = async () => Response.json({
+      choices: [{ message: { content: JSON.stringify(modelResponse({
+        summary: "当前收益是 987654321.123%，这一数值代表本轮数据。",
+        summaryEvidenceIds: [snapshot.evidence[0]!.id],
+      })) } }],
+    });
+    await expect(createAiReport(input, snapshot, {
+      MODEL_BASE_URL: "https://model.example/v1",
+      MODEL_API_KEY: "test-key",
+      MODEL_NAME: "test-model",
+    }, { fetcher })).rejects.toMatchObject({ code: "REPORT_VALIDATION_FAILED" });
+  });
+
+  it("accepts a rounded numerical claim supported by its cited evidence", async () => {
+    const snapshot = liveSnapshot();
+    const evidence = snapshot.evidence.find((item) => typeof item.value === "number")!;
+    const condition = snapshot.switchConditions[0]!;
+    const value = (evidence.value as number).toFixed(2);
+    const date = evidence.period.end.replace(/^(\d{4})-(\d{2})-(\d{2})$/, "$1年$2月$3日");
+    const fetcher: typeof fetch = async () => Response.json({
+      choices: [{ message: { content: JSON.stringify(modelResponse({
+        summary: `截至 ${date}，当前证据数值为 ${value}${evidence.unit}，与代码复核条件 ${condition.threshold}${condition.unit} 比较。`,
+        summaryEvidenceIds: [evidence.id],
+        reevaluationConditionIds: [condition.metricId],
+      })) } }],
+    });
+    const report = await createAiReport(input, snapshot, {
+      MODEL_BASE_URL: "https://model.example/v1",
+      MODEL_API_KEY: "test-key",
+      MODEL_NAME: "test-model",
+    }, { fetcher });
+
+    expect(report.summary).toContain(value);
+  });
+
+  it("accepts the magnitude of a negative spread when the wording describes a lower value", async () => {
+    const snapshot = liveSnapshot();
+    const evidence = snapshot.evidence[0]!;
+    evidence.value = -3.631998;
+    evidence.unit = "百分点";
+    const fetcher: typeof fetch = async () => Response.json({
+      choices: [{ message: { content: JSON.stringify(modelResponse({
+        summary: "同期小盘指数收益低 3.63 个百分点。",
+        summaryEvidenceIds: [evidence.id],
+      })) } }],
+    });
+    const report = await createAiReport(input, snapshot, {
+      MODEL_BASE_URL: "https://model.example/v1",
+      MODEL_API_KEY: "test-key",
+      MODEL_NAME: "test-model",
+    }, { fetcher });
+
+    expect(report.summary).toContain("低 3.63 个百分点");
+  });
+
+  it("surfaces malformed JSON and model network timeouts with stable error codes", async () => {
+    const source = {
+      MODEL_BASE_URL: "https://model.example/v1",
+      MODEL_API_KEY: "test-key",
+      MODEL_NAME: "test-model",
+    };
+    const malformed: typeof fetch = async () => Response.json({ choices: [{ message: { content: "{broken" } }] });
+    const timeout: typeof fetch = async () => { throw new Error("network timeout"); };
+
+    await expect(createAiReport(input, liveSnapshot(), source, { fetcher: malformed }))
+      .rejects.toMatchObject({ code: "MODEL_INVALID_RESPONSE" });
+    await expect(createAiReport(input, liveSnapshot(), source, { fetcher: timeout }))
+      .rejects.toMatchObject({ code: "MODEL_NETWORK_ERROR" });
+  });
+
   it("rejects trading advice even when the model returns valid JSON", async () => {
     const fetcher: typeof fetch = async () => Response.json({
       choices: [{ message: { content: JSON.stringify(modelResponse({

@@ -4,9 +4,9 @@
 
 ## 当前交付状态
 
-工作台、合成演示、指标、证据抽屉、JSON／Markdown 导出、扶摇 REST 适配器和结构化 AI 报告适配器已实现。已在本地 live 模式完成扶摇真实行情与 DeepSeek `deepseek-flash` 的端到端冒烟：AI 研究计划和报告通过校验；最新全市场快照时点与最近完成交易日不一致时，市场宽度会明确标为过期。
+工作台、合成演示、指标、证据抽屉、JSON／Markdown 导出、扶摇 REST 适配器和结构化 AI 报告适配器已实现。自托管版本已在服务器运行，并完成真实扶摇行情与 DeepSeek `deepseek-flash` 的研究流冒烟。2026-10-18 就绪的全市场快照按交易日历归属到最近完成交易日 2026-10-16；快照就绪时间与行情归属日分别展示，不再因日期不相同而误标为过期。模型引用的数值必须能由引用证据支持，否则隐藏 AI 报告并保留代码计算结果。
 
-live 模式会获取指数日线和最新全市场快照，按代码计算指标；宽度仅在快照时点与最近已完成交易日一致且分页完整时可用。模型先从受限的行情、市场宽度、风格维度中选择研究范围，再基于返回证据生成结构化归纳、观察、反证和不确定事项；服务端会校验证据引用。iFinD MCP 尚未连接。缺少真实能力时，页面显示缺口，不会用演示值代替。
+live 模式会获取指数日线和最新全市场快照，按代码计算指标；宽度仅在完整分页、市场收盘确认且能对应最近已完成交易日时可用。模型先从受限的行情、市场宽度、风格维度中选择研究范围，再基于返回证据生成结构化归纳、观察、反证和不确定事项；服务端会校验证据引用及数值。iFinD MCP 尚未连接；本机技能配置目前未通过认证。估值、情绪和事件维度保持明确缺口，不会用演示值代替。
 
 ## 本地运行
 
@@ -54,12 +54,13 @@ MODEL_THINKING_MODE=disabled
 
 ## 数据来源和局限
 
-扶摇官方接口结构与接入状态记录在 [`docs/data-capabilities.md`](docs/data-capabilities.md)。上证、深证成指、创业板、沪深 300 与中证 1000 的 live 取数已验证；市场宽度不能由最新快照回填旧历史日期，最近一次快照因时点不匹配被标为 stale。数据展示授权仍待确认。当前未实现指数估值、情绪、事件与 iFinD。
+扶摇官方接口结构与接入状态记录在 [`docs/data-capabilities.md`](docs/data-capabilities.md)。上证、深证成指、创业板、沪深 300 与中证 1000 的 live 取数已验证；最新快照可计算最近完成交易日的市场宽度，但不能回填旧历史日期。数据展示授权仍待确认。当前未实现估值、情绪、事件与 iFinD 适配器。
 
 演示序列为代码生成的合成数据，不是实际市场记录。live 上游失败不会静默降级为 demo。
 
 ## 文档
 
+- [项目现状与迭代路线图（压缩版）](docs/项目现状与迭代路线图.md)
 - [原始需求](docs/source-requirements.md)
 - [完整开发执行计划](docs/development-plan.md)
 - [市场观察方法](docs/methodology.md)
@@ -68,8 +69,9 @@ MODEL_THINKING_MODE=disabled
 - [AI 使用与验证记录](docs/ai-usage-and-validation.md)
 - [测试说明](docs/testing.md)
 - [自托管部署](docs/self-hosted-deployment.md)
+- [项目交付状态](docs/submission.md)
 - [实现决策](docs/decisions.md)
 
 ## 已知边界
 
-私有开发预览已部署：[打开市场证据台](https://market-evidence-desk-20261018.minty-genet-8078.chatgpt.site)。服务器版可经 VPN 访问：[http://192.168.188.2:3180](http://192.168.188.2:3180)。部署与更新说明见[自托管部署](docs/self-hosted-deployment.md)；正式开放互联网访问前仍需配置 HTTPS、身份认证并核验数据展示授权。
+公开体验：[市场证据台](https://market-evidence-desk-20261018.minty-genet-8078.chatgpt.site)。公开源码：[GitHub 仓库](https://github.com/PatreIsreal/market-evidence-mvp)。公开版本由服务端保管扶摇与 DeepSeek 凭据；访客发起研究会使用配置账户的上游额度。自托管部署默认只监听本机回环地址；如需在 VPN 内访问，按[自托管部署说明](docs/self-hosted-deployment.md)设置绑定地址。

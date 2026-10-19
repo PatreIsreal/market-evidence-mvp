@@ -1,6 +1,6 @@
 # 自托管部署（Docker）
 
-本项目可以部署到 Ubuntu／Debian 服务器。容器使用 Node.js 22，主机不需要安装项目依赖；运行时由非 root 的容器账号启动。当前配置将应用映射到 VPN 地址 `192.168.188.2:3180`，适合个人或内网访问。
+本项目可以部署到 Ubuntu／Debian 服务器。容器使用 Node.js 22，主机不需要安装项目依赖；运行时由非 root 的容器账号启动。默认映射到本机回环地址 `127.0.0.1:3180`，避免新部署时意外监听公网网卡。若需在 VPN 内访问，请在项目目录 `.env` 中将 `APP_BIND_HOST` 设为服务器的 VPN 网卡地址，再启动 Compose；不要把 `.dev.vars` 中的服务密钥写进 `.env`。
 
 ## 首次部署
 
@@ -32,7 +32,7 @@
    curl http://127.0.0.1:3180/api/health
    ```
 
-   通过 `http://192.168.188.2:3180` 打开页面。端口只绑定到该 VPN 地址，不会监听服务器其他网卡。
+   默认通过 `http://127.0.0.1:3180` 打开页面。设置 `APP_BIND_HOST` 后，通过服务器对应的 VPN 地址和端口 3180 访问；不要将应用端口直接开放到公网。
 
 ## 更新与运维
 
@@ -53,4 +53,4 @@ docker compose down
 
 自托管使用 Wrangler 的本地 Worker runtime。Compose 会只读挂载 Ubuntu／Debian 主机 CA bundle，并设置 `NODE_EXTRA_CA_CERTS`，让 Workerd 验证上游 HTTPS 证书；不要关闭 TLS 证书校验。
 
-应用服务使用 Wrangler 的本地 Worker runtime 托管 Vinext worker bundle。它适用于当前个人/内网 MVP；若要开放互联网访问，应再配置 HTTPS、身份认证及反向代理，并检查扶摇数据展示授权。
+应用服务使用 Wrangler 的本地 Worker runtime 托管 Vinext worker bundle，适用于个人或 VPN 内使用。公开体验站点由 Sites 独立托管；自托管实例若要开放互联网访问，还需要 HTTPS、访问控制、限流和扶摇数据展示授权核验。

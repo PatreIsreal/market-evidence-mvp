@@ -173,6 +173,41 @@ function checkCitations(draft: z.infer<typeof draftSchema>, snapshot: ResearchSn
   if (draft.reevaluationConditionIds.some((id) => !conditionIds.has(id))) {
     throw new ModelProviderError("模型引用了本轮不存在的复核条件，已隐藏本轮 AI 研判。", "REPORT_VALIDATION_FAILED");
   }
+
+  const evidenceById = new Map(snapshot.evidence.map((item) => [item.id, item]));
+  const claims = [
+    { statement: draft.summary, ids: draft.summaryEvidenceIds },
+    ...draft.observations.map((item) => ({ statement: item.statement, ids: item.evidenceIds })),
+    ...draft.counterpoints.map((item) => ({ statement: item.statement, ids: item.evidenceIds })),
+  ];
+  for (const claim of claims) {
+    const supportingText = claim.ids.flatMap((id) => {
+      const item = evidenceById.get(id);
+      return item ? [
+        String(item.value ?? ""), item.label, item.unit,
+        item.period.start, item.period.end, item.dataAsOf ?? "",
+        item.scopeDescription,
+        ...Object.values(item.derivation?.parameters ?? {}).map(String),
+      ] : [];
+    }).join(" ");
+    const ruleNumbers = snapshot.switchConditions.flatMap((condition) => numericTokens(`${condition.threshold} ${condition.currentValue ?? ""}`));
+    const supportedNumbers = [...numericTokens(supportingText), ...ruleNumbers].flatMap((value) => {
+      const variants = [value, Number(value.toFixed(1)), Number(value.toFixed(2)), Math.round(value)];
+      return [...variants, ...variants.map(Math.abs)];
+    });
+    const unsupportedNumber = numericTokens(claim.statement).find((value) =>
+      !supportedNumbers.some((supported) => Math.abs(value - supported) < 1e-8),
+    );
+    if (unsupportedNumber !== undefined) {
+      throw new ModelProviderError("模型输出包含引用证据或代码条件无法支持的数值，已隐藏本轮 AI 研判。", "REPORT_VALIDATION_FAILED");
+    }
+  }
+}
+
+function numericTokens(text: string): number[] {
+  // A hyphen inside ISO dates separates fields; it must not turn month/day into negatives.
+  return Array.from(text.matchAll(/(?<!\d)-?\d+(?:,\d{3})*(?:\.\d+)?/g), ([token]) => Number(token.replaceAll(",", "")))
+    .filter(Number.isFinite);
 }
 
 export async function createAiReport(
